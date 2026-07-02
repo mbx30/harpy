@@ -25,5 +25,8 @@ Thumbs.db
 *.log
 .cache/
 
+# Local chain persistence
+/data/
+
 # Local tooling
 .claude/settings.local.json

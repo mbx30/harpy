@@ -1,74 +1,66 @@
-require "openssl/digest"
+require "digest/sha256"
+require "json"
 
-module Harpy::Block
-  extend self
+module Harpy
+  struct Block
+    include JSON::Serializable
 
-  DEFAULT_DIFFICULTY = 3
+    DEFAULT_DIFFICULTY = 3
 
-  def difficulty
-    DEFAULT_DIFFICULTY
-  end
+    getter index : Int32
+    getter timestamp : String
+    getter data : String
+    getter hash : String
+    getter prev_hash : String
+    getter difficulty : Int32
+    getter nonce : String
 
-  def create(index, timestamp, data, prev_hash)
-    block = {
-      index:        index,
-      timestamp:    timestamp,
-      data:         data,
-      prev_hash:    prev_hash,
-      difficulty:   self.difficulty,
-      nonce:        "",
-    }
+    def initialize(
+      @index : Int32,
+      @timestamp : String,
+      @data : String,
+      @prev_hash : String,
+      @difficulty : Int32 = DEFAULT_DIFFICULTY,
+      @nonce : String = "",
+      @hash : String = "",
+    )
+    end
 
-    block.merge({hash: calculate_hash(block)})
-  end
-
-  def calculate_hash(block)
-    plain_text = "
-      #{block[:index]}
-      #{block[:timestamp]}
-      #{block[:data]}
-      #{block[:prev_hash]}
-      #{block[:nonce]}
+    def computed_hash : String
+      plain_text = "
+      #{@index}
+      #{@timestamp}
+      #{@data}
+      #{@prev_hash}
+      #{@nonce}
     "
 
-    digest = OpenSSL::Digest.new("SHA256")
-    digest.update(plain_text)
-    digest.to_s
-  end
-
-  def hash_valid?(hash, difficulty)
-    hash.starts_with?("0" * difficulty)
-  end
-
-  def generate(last_block : Harpy::BlockType, data : String) : Harpy::BlockType
-    new_block = create(
-      last_block[:index] + 1,
-      Time.utc.to_s,
-      data,
-      last_block[:hash],
-    )
-
-    i = 0
-    loop do
-      nonce = i.to_s(16)
-      candidate = new_block.merge({nonce: nonce})
-
-      unless hash_valid?(calculate_hash(candidate), candidate[:difficulty])
-        puts "Mining: trying another nonce... #{calculate_hash(candidate)}"
-        i += 1
-        next
-      end
-
-      puts "\nMining complete! Nonce for this block is #{nonce}."
-      return candidate.merge({hash: calculate_hash(candidate)})
+      Digest::SHA256.hexdigest(plain_text)
     end
-  end
 
-  def valid?(new_block : Harpy::BlockType, previous_block : Harpy::BlockType) : Bool
-    return false if previous_block[:index] + 1 != new_block[:index]
-    return false if previous_block[:hash] != new_block[:prev_hash]
-    return false if calculate_hash(new_block) != new_block[:hash]
+    def pow_valid? : Bool
+      @hash.starts_with?("0" * @difficulty)
+    end
 
-    true
+    def hash_matches? : Bool
+      @hash == computed_hash
+    end
+
+    def valid_against?(previous : Block) : Bool
+      return false unless @index == previous.index + 1
+      return false unless @prev_hash == previous.hash
+      return false unless hash_matches?
+      return false unless pow_valid?
+
+      true
+    end
+
+    def self.genesis(
+      data : String = "Genesis block's data!",
+      timestamp : String = Time.utc.to_s,
+      difficulty : Int32 = DEFAULT_DIFFICULTY,
+    ) : Block
+      new(0, timestamp, data, "", difficulty)
+    end
   end
 end
