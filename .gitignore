@@ -1,0 +1,29 @@
+# Crystal / Shards
+/docs/
+/lib/
+/bin/
+/.shards/
+*.dwarf
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs and caches
+*.log
+.cache/
+
+# Local tooling
+.claude/settings.local.json

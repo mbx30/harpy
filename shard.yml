@@ -1,0 +1,21 @@
+name: harpy
+version: 0.1.0
+
+description: |
+  Harpy — a Crystal proof-of-work blockchain tutorial. Named after Harpocrates,
+  the Greek god of silence; an educational chain with HTTP read/write endpoints.
+
+authors:
+  - micha
+
+crystal: ">= 1.12.0"
+
+license: MIT
+
+dependencies:
+  kemal:
+    github: kemalcr/kemal
+
+targets:
+  harpy:
+    main: src/harpy.cr

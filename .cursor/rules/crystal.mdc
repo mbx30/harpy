@@ -1,0 +1,13 @@
+---
+description: Crystal language conventions for harpy
+globs: **/*.{cr,yml}
+alwaysApply: false
+---
+
+# Crystal conventions
+
+- Entry point: `src/harpy.cr`; library code under `src/harpy/`.
+- Prefer explicit types at public boundaries; let inference work inside methods.
+- Use `spec` blocks in `spec/` for tests; require `spec_helper` in each spec file.
+- Add shards to `shard.yml` under `dependencies`, then `shards install`.
+- Format before finishing: `crystal tool format`.

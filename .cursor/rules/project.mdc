@@ -1,0 +1,12 @@
+---
+description: Core conventions for the harpy project
+alwaysApply: true
+---
+
+# Harpy project conventions
+
+- **What:** Educational Crystal PoW blockchain (single-node, HTTP API). Not production.
+- **Tracking:** [Linear project](https://linear.app/mbx2/project/harpy-16c5704dd57d/overview)
+- Read `AGENTS.md` for architecture, API, roadmap, and commands.
+- After code changes: `crystal spec`; format with `crystal tool format`.
+- Do not commit, push, or modify git config unless the user asks.
