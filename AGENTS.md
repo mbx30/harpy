@@ -76,3 +76,18 @@ Default PoW difficulty: **3** leading zero hex digits (`Harpy::Block::DEFAULT_DI
 - **Shards requires Windows Developer Mode** (`ms-settings:developers`) for symlinks
 - `scripts/setup.ps1` checks Crystal PATH + Developer Mode, then runs `shards install`
 - Commit `shard.lock` once dependencies are installed.
+
+## Cursor Cloud specific instructions
+
+Cloud VMs run **Linux** (Ubuntu), not Windows — ignore the Windows/`winget`/Developer-Mode notes above in this environment. Crystal + Shards are preinstalled in the VM image (installed via the official apt repo at `https://crystal-lang.org/install.sh`); the startup update script only runs `shards install`.
+
+Standard commands (see the `## Commands` table) work as written on Linux:
+
+- Run the server: `crystal run src/harpy.cr` → listens on `http://localhost:3000` (`GET /`, `POST /new-block`).
+- Tests: `crystal spec`. Format: `crystal tool format[ --check]`. Build: `shards build` → `bin/harpy`.
+
+**Known blocking bug (be careful):** `Harpy::Block.calculate_hash` uses `OpenSSL::Digest#to_s`, which on current Crystal (1.20) returns the object inspect string (e.g. `#<OpenSSL::Digest:0x...>`, 33 chars) instead of the 64-char hex digest. Consequences:
+
+- Mining (`Harpy::Block.generate`) never finds a hash starting with `"000"`, so it **loops forever**. `POST /new-block` hangs indefinitely, and `crystal spec` hangs on the "validates block linkage" example. Always run specs/mining under a `timeout` until this is fixed.
+- `GET /` still works and returns the genesis chain (with the malformed `hash` value).
+- The correct hex digest comes from `digest.final.hexstring` (not `to_s`, and `hexdigest` is not defined on `OpenSSL::Digest`).
