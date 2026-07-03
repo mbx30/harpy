@@ -105,8 +105,9 @@ Read endpoints (`GET /`, `/validate`, `/block/:index`) remain unauthenticated.
 |----------|---------|---------|
 | `HARPY_RATE_LIMIT` | `2` | Bucket capacity (max burst) |
 | `HARPY_RATE_LIMIT_WINDOW` | `10` | Seconds between token refills |
+| `HARPY_TRUST_PROXY` | unset | Trust `X-Forwarded-For` for client identity (behind a trusted proxy only) |
 
-Client identity is the first address in `X-Forwarded-For` when present, otherwise the TCP remote address. Exceeding the limit returns HTTP **429** with `{"error":"rate limit exceeded"}`. `GET` routes are not rate limited.
+Client identity is the TCP remote address. The first address in `X-Forwarded-For` is used **only when `HARPY_TRUST_PROXY` is set** — on a directly-reachable node that header is attacker-controlled, so trusting it would let a client forge a new identity per request and bypass the limit. Exceeding the limit returns HTTP **429** with `{"error":"rate limit exceeded"}`. `GET` routes are not rate limited.
 
 ```bash
 HARPY_RATE_LIMIT=1 HARPY_RATE_LIMIT_WINDOW=60 crystal run src/harpy.cr
@@ -183,7 +184,7 @@ Specs use `difficulty: 0` in helpers so mining finishes instantly. Canonical has
 
 ### Validation rules exercised in tests
 
-- Hash must match `computed_hash` (SHA-256 over index, timestamp, data, prev_hash, nonce — **not** difficulty)
+- Hash must match `computed_hash` (SHA-256 over a length-prefixed `harpy-block-v2` encoding of index, timestamp, data, prev_hash, nonce — **not** difficulty)
 - Proof-of-work: hash prefix matches `difficulty` leading zeros
 - Linkage: `index` increments and `prev_hash` matches parent
 - Timestamps: child `timestamp` must be **≥ parent** (monotonic)

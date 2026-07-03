@@ -75,6 +75,32 @@ describe "POST /new-block rate limiting" do
     second.body.should eq(%({"error":"rate limit exceeded"}))
   end
 
+  it "ignores a spoofed X-Forwarded-For by default so it cannot escape the limit" do
+    limiter = Harpy::RateLimiter.new(max_tokens: 1, refill_seconds: 60)
+
+    Harpy::SpecHelpers.with_env("HARPY_TRUST_PROXY", nil) do
+      first = rate_limited_harpy_response("1.1.1.1", rate_limiter: limiter)
+      first.status_code.should eq(200)
+
+      # A different forged X-Forwarded-For must NOT be treated as a new client
+      # when the proxy is untrusted — both collapse to the real peer identity.
+      second = rate_limited_harpy_response("2.2.2.2", rate_limiter: limiter)
+      second.status_code.should eq(429)
+    end
+  end
+
+  it "honors X-Forwarded-For only when HARPY_TRUST_PROXY is set" do
+    limiter = Harpy::RateLimiter.new(max_tokens: 1, refill_seconds: 60)
+
+    Harpy::SpecHelpers.with_env("HARPY_TRUST_PROXY", "1") do
+      first = rate_limited_harpy_response("1.1.1.1", rate_limiter: limiter)
+      first.status_code.should eq(200)
+
+      second = rate_limited_harpy_response("2.2.2.2", rate_limiter: limiter)
+      second.status_code.should eq(200)
+    end
+  end
+
   it "does not rate limit GET /" do
     Kemal.config.clear
     Kemal::FilterHandler::INSTANCE.tree = Radix::Tree(Array(Kemal::FilterHandler::FilterBlock)).new

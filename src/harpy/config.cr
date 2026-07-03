@@ -1,4 +1,5 @@
 require "http/request"
+require "crypto/subtle"
 
 module Harpy
   module Config
@@ -54,6 +55,21 @@ module Harpy
       DEFAULT_BIND_HOST
     end
 
+    # Whether to trust the `X-Forwarded-For` header for client identification
+    # (rate limiting). Off by default: when the node is reached directly, that
+    # header is fully attacker-controlled, so honoring it lets a client forge a
+    # fresh identity per request — bypassing the per-IP limit and growing the
+    # bucket map without bound. Enable only when a trusted reverse proxy that
+    # sets/overwrites `X-Forwarded-For` sits in front of the node.
+    def trust_proxy? : Bool
+      case ENV["HARPY_TRUST_PROXY"]?.try(&.downcase)
+      when "1", "true", "yes", "on"
+        true
+      else
+        false
+      end
+    end
+
     def rate_limit_max : Int32
       if value = ENV["HARPY_RATE_LIMIT"]?
         parsed = value.to_i
@@ -77,14 +93,23 @@ module Harpy
 
       if auth = request.headers["Authorization"]?
         token = auth.sub(/^Bearer\s+/i, "")
-        return true if token == key
+        return true if secure_equal?(token, key)
       end
 
       if header_key = request.headers["X-API-Key"]?
-        return true if header_key == key
+        return true if secure_equal?(header_key, key)
       end
 
       false
+    end
+
+    # Constant-time string comparison for the write-auth secret. A plain `==`
+    # short-circuits on the first differing byte, leaking via response timing how
+    # many leading bytes of a guess were correct — enough to recover the key
+    # byte-by-byte against an exposed node. `Crypto::Subtle.constant_time_compare`
+    # is length-safe and does not early-exit.
+    private def secure_equal?(a : String, b : String) : Bool
+      Crypto::Subtle.constant_time_compare(a, b)
     end
   end
 end

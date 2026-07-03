@@ -61,6 +61,7 @@ crystal run src/harpy.cr -- help
 | `HARPY_RATE_LIMIT` | Max mining requests per client per window (default `2`) |
 | `HARPY_RATE_LIMIT_WINDOW` | Token-bucket refill interval in seconds (default `10`) |
 | `HARPY_BIND_HOST` | Interface to bind (default `127.0.0.1`; set `0.0.0.0` to expose on the LAN) |
+| `HARPY_TRUST_PROXY` | Trust `X-Forwarded-For` for per-client rate limiting (default off; enable only behind a trusted reverse proxy) |
 
 Example — faster genesis for local demos:
 

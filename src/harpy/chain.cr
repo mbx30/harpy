@@ -43,7 +43,13 @@ class Harpy::Chain
   end
 
   def cumulative_work : UInt64
-    @blocks.sum(0_u64) { |block| block.work }
+    # Saturating sum: a plain `sum` would silently wrap on UInt64 overflow and
+    # could make a heavier chain score lower than a lighter one, corrupting fork
+    # choice. Values for realistic (low-difficulty) chains are unaffected.
+    @blocks.reduce(0_u64) do |acc, block|
+      w = block.work
+      acc > UInt64::MAX - w ? UInt64::MAX : acc + w
+    end
   end
 
   def replace_if_more_work_valid!(candidate : Array(Harpy::Block)) : Bool

@@ -175,7 +175,7 @@ getter merkle_root : String
 
 ## 4. Hash serialization breaking change
 
-`Block#computed_hash` today digests:
+`Block#computed_hash` today digests a canonical, length-prefixed encoding (domain tag `harpy-block-v2`) of the fields:
 
 ```
 index
@@ -184,6 +184,8 @@ data          ← replaced
 prev_hash
 nonce
 ```
+
+(Each variable field is prefixed by its byte length; ordering is as shown.)
 
 **Phase 4** replaces `data` with **`merkle_root`** (64-char hex):
 
@@ -199,7 +201,7 @@ nonce
 
 **Consequences:**
 
-- All `spec/fixtures/hash_vectors.json` vectors for the `data` era remain valid for historical reference; new fixtures are required for transaction-era blocks.
+- `spec/fixtures/hash_vectors.json` pins the current `harpy-block-v2` `data`-era preimage; new fixtures are required for transaction-era blocks.
 - PoW (`pow_valid?`) is unchanged: hash must start with `difficulty` leading hex zeroes.
 - Any tool that recomputes `computed_hash` must implement canonical merkle root calculation identically.
 

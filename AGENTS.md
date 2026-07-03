@@ -66,12 +66,13 @@ Default PoW difficulty: **3** leading zero hex digits (`Harpy::Block::DEFAULT_DI
 | `HARPY_API_KEY` | unset | When set, writes require `Authorization: Bearer` or `X-API-Key` |
 | `HARPY_RATE_LIMIT` | `2` | Max mining requests per client per window |
 | `HARPY_RATE_LIMIT_WINDOW` | `10` | Refill interval in seconds for the token bucket |
+| `HARPY_TRUST_PROXY` | unset | When truthy, trust `X-Forwarded-For` for client identity (set only behind a trusted reverse proxy) |
 
-Rate limiting applies only to `POST /new-block`. Client identity uses the first `X-Forwarded-For` hop when present, otherwise the remote address. See `docs/DEMO.md` for curl examples and `docs/THREAT_MODEL.md` for deployment guidance.
+Rate limiting applies only to `POST /new-block`. Client identity uses the first `X-Forwarded-For` hop **only when `HARPY_TRUST_PROXY` is set** (a directly-reachable node must not trust that client-supplied header); otherwise it uses the TCP remote address. Idle buckets are evicted once fully refilled to bound memory. See `docs/DEMO.md` for curl examples and `docs/THREAT_MODEL.md` for deployment guidance.
 
 ### Hash serialization
 
-`Block#computed_hash` SHA-256 digests a fixed multiline string of `index`, `timestamp`, `data`, `prev_hash`, and `nonce`. **`difficulty` is not included.** Pinned vectors: `spec/fixtures/hash_vectors.json`.
+`Block#computed_hash` SHA-256 digests a canonical, **length-prefixed** encoding (domain tag `harpy-block-v2`) of `index`, `timestamp`, `data`, `prev_hash`, and `nonce` — each variable field prefixed by its byte length so no field value can spoof another's boundary. **`difficulty` is not included.** Pinned vectors: `spec/fixtures/hash_vectors.json`.
 
 ### Validation
 

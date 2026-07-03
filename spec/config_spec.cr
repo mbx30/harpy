@@ -99,6 +99,51 @@ describe Harpy::Config do
 
     Harpy::Config.write_authorized?(request, "secret-key").should be_false
   end
+
+  it "rejects a wrong Bearer token" do
+    request = HTTP::Request.new("POST", "/new-block")
+    request.headers["Authorization"] = "Bearer wrong-key"
+
+    Harpy::Config.write_authorized?(request, "secret-key").should be_false
+  end
+
+  it "rejects a wrong X-API-Key" do
+    request = HTTP::Request.new("POST", "/new-block")
+    request.headers["X-API-Key"] = "wrong-key"
+
+    Harpy::Config.write_authorized?(request, "secret-key").should be_false
+  end
+
+  it "rejects a token that is a prefix of the key (length-safe comparison)" do
+    request = HTTP::Request.new("POST", "/new-block")
+    request.headers["X-API-Key"] = "secret"
+
+    Harpy::Config.write_authorized?(request, "secret-key").should be_false
+  end
+end
+
+describe "Harpy::Config.trust_proxy?" do
+  it "defaults to false" do
+    Harpy::SpecHelpers.with_env("HARPY_TRUST_PROXY", nil) do
+      Harpy::Config.trust_proxy?.should be_false
+    end
+  end
+
+  it "is true for common truthy values" do
+    {"1", "true", "TRUE", "yes", "on"}.each do |value|
+      Harpy::SpecHelpers.with_env("HARPY_TRUST_PROXY", value) do
+        Harpy::Config.trust_proxy?.should be_true
+      end
+    end
+  end
+
+  it "is false for other values" do
+    {"0", "false", "no", ""}.each do |value|
+      Harpy::SpecHelpers.with_env("HARPY_TRUST_PROXY", value) do
+        Harpy::Config.trust_proxy?.should be_false
+      end
+    end
+  end
 end
 
 describe "HARPY_DIFFICULTY genesis bootstrap" do

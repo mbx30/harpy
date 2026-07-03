@@ -18,6 +18,27 @@ describe Harpy::Block do
     Harpy::Block.new(0, "2026-01-01", "test", "", 3, "0", "00abc").pow_valid?.should be_false
   end
 
+  it "treats a negative difficulty as invalid PoW instead of raising" do
+    Harpy::Block.new(0, "2026-01-01", "test", "", -1, "0", "abc").pow_valid?.should be_false
+  end
+
+  it "commits to fields injectively so a crafted data string cannot spoof another block" do
+    # A `data` payload that embeds what a naive newline-joined preimage would
+    # read as the timestamp/prev_hash/nonce of a different block must NOT hash to
+    # that other block. Length-prefixing makes the field boundaries unforgeable.
+    injected = Harpy::Block.new(0, "ts", "d\nprev\nnonce", "", 0, "x")
+    spoofed = Harpy::Block.new(0, "ts", "d", "prev", 0, "nonce\nx")
+
+    injected.computed_hash.should_not eq(spoofed.computed_hash)
+  end
+
+  it "saturates work instead of overflowing to zero at high difficulty" do
+    # 4 * 16 = 64-bit shift would wrap a raw `1 << shift` to 0.
+    Harpy::Block.new(0, "2026-01-01", "test", "", 16, "0").work.should eq(UInt64::MAX)
+    Harpy::Block.new(0, "2026-01-01", "test", "", 15, "0").work.should eq(1_u64 << 60)
+    Harpy::Block.new(0, "2026-01-01", "test", "", 0, "0").work.should eq(1_u64)
+  end
+
   it "validates linkage and hash integrity against the previous block" do
     genesis = Harpy::SpecHelpers.mined_genesis
     next_block = Harpy::Miner.mine_next(genesis, "block two")
@@ -119,6 +140,13 @@ describe Harpy::Chain do
     chain = Harpy::SpecHelpers.build_chain(3, difficulty: 2)
 
     chain.cumulative_work.should eq(3_u64 * (1_u64 << 8))
+  end
+
+  it "saturates cumulative work rather than wrapping on overflow" do
+    saturated = Harpy::Block.new(0, "2026-01-01", "a", "", 16, "0")
+    chain = Harpy::Chain.new([saturated, saturated])
+
+    chain.cumulative_work.should eq(UInt64::MAX)
   end
 end
 

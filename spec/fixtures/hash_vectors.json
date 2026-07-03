@@ -6,7 +6,7 @@
     "data": "test",
     "prev_hash": "",
     "nonce": "0",
-    "expected_hash": "1d2846ca884f9da52b3400e87e54f2801a7cdd013165806b0aa12f3715184c99"
+    "expected_hash": "08fb313db12857e8375b29cdb3455893021723b82546a52b2a7a11ea4b8a5e6c"
   },
   {
     "description": "default genesis data string",
@@ -15,7 +15,7 @@
     "data": "Genesis block's data!",
     "prev_hash": "",
     "nonce": "0",
-    "expected_hash": "a430e68f83cbeb14852ee9e028719492d30424babe09e727ac992e11d1ca1e97"
+    "expected_hash": "ec615e721f13c3dd9e234c1786001cdff170406108b41fe63687584b39d248e2"
   },
   {
     "description": "hex nonce on chained index",
@@ -24,6 +24,6 @@
     "data": "block two",
     "prev_hash": "",
     "nonce": "abc",
-    "expected_hash": "27e1801c4c2bdf51e254571a001464594f3fb04c4ca52f34e6946e5fd109593e"
+    "expected_hash": "f09f8eea02ea811bd884e707782e899bec3c2a54911b0d908d0e78fa8069e222"
   }
 ]

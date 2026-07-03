@@ -42,7 +42,8 @@ Following layer-based blockchain security surveys ([Li et al. arXiv:1802.06993](
 
 **Mitigations (in repo):**
 
-- Per-IP token bucket on `POST /new-block` → HTTP 429 ([MIC-41](https://linear.app/mbx2/issue/MIC-41)).
+- Per-IP token bucket on `POST /new-block` → HTTP 429 ([MIC-41](https://linear.app/mbx2/issue/MIC-41)). Client identity is the TCP remote address; the client-supplied `X-Forwarded-For` header is trusted **only** when `HARPY_TRUST_PROXY` is set, so a directly-reachable node cannot have its per-IP limit bypassed by header spoofing.
+- Bucket table evicts fully-refilled (idle) entries, bounding memory against a flood of distinct client keys.
 - Optional `HARPY_API_KEY` for write auth in deployment ([MIC-43](https://linear.app/mbx2/issue/MIC-43)).
 
 **Residual risk:** Distributed flood from many IPs; no global quota. **Deferred:** [MIC-68](https://linear.app/mbx2/issue/MIC-68) (broader hardening), production reverse proxy / WAF.
@@ -70,7 +71,7 @@ Tune defaults with `HARPY_RATE_LIMIT` (bucket capacity, default `2`) and `HARPY_
 
 **Mitigations:**
 
-- `HARPY_API_KEY` + `Authorization: Bearer` or `X-API-Key` on writes when set.
+- `HARPY_API_KEY` + `Authorization: Bearer` or `X-API-Key` on writes when set. The key is checked with a **constant-time** comparison (`Crypto::Subtle.constant_time_compare`) so response timing does not leak how many leading bytes of a guess were correct.
 - Tutorial default: no key (local dev only).
 - **Phase 4:** Writes become signed transactions (`POST /tx`) and mining (`POST /mine`); unauthorized parties cannot forge spends without private keys. See [STATE_MODEL.md](./STATE_MODEL.md) §8.
 
@@ -138,7 +139,7 @@ Tune defaults with `HARPY_RATE_LIMIT` (bucket capacity, default `2`) and `HARPY_
 
 **Impact:** Rejected by `hash_matches?`, linkage, and `pow_valid?` checks.
 
-**Mitigations:** Deterministic `computed_hash` (see `spec/fixtures/hash_vectors.json`, [MIC-30](https://linear.app/mbx2/issue/MIC-30)).
+**Mitigations:** Deterministic `computed_hash` over a canonical, **length-prefixed** preimage (domain tag `harpy-block-v2`): each variable field carries its byte length, so the hash injectively commits to the structured contents and a crafted `data` string cannot reproduce another block's preimage. Cumulative-work scoring saturates at `UInt64::MAX` and rejects negative difficulty, so a high- or malformed-difficulty block cannot underflow work or crash the loader. See `spec/fixtures/hash_vectors.json`, [MIC-30](https://linear.app/mbx2/issue/MIC-30).
 
 ### 7. Sybil identity flood (network — not yet applicable)
 
@@ -168,6 +169,7 @@ This closes the “same height, weaker PoW” gap from naive longest-chain-by-co
 |---------|------------------|-------------------|
 | `HARPY_API_KEY` | Unset | Set; terminate TLS at proxy |
 | Rate limit | `HARPY_RATE_LIMIT=2`, `HARPY_RATE_LIMIT_WINDOW=10` | Tune capacity/refill; add edge rate limits |
+| Proxy header trust | `HARPY_TRUST_PROXY` unset (use TCP peer) | Set **only** if a trusted proxy overwrites `X-Forwarded-For` |
 | Request size | 64 KiB body / 32 KiB `data` (fixed in code) | Same; reject at reverse proxy if desired |
 | `HARPY_DATA_DIR` | `data/chain.json` | Dedicated volume, backups |
 | Exposure | `localhost` only | Firewall; do not expose mining to the public internet |
