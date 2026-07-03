@@ -47,7 +47,11 @@ module Harpy
     end
 
     def bind_host : String
-      ENV["HARPY_BIND_HOST"]? || DEFAULT_BIND_HOST
+      if value = ENV["HARPY_BIND_HOST"]?
+        return value unless value.empty?
+      end
+
+      DEFAULT_BIND_HOST
     end
 
     def rate_limit_max : Int32

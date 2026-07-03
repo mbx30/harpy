@@ -101,7 +101,7 @@ src/harpy/storage/backend.cr    # abstract Backend interface
 src/harpy/storage/file_backend.cr # atomic file writes + checksum verification
 src/harpy/cli.cr                # verify-chain / export-chain subcommands
 src/harpy/server.cr             # Kemal HTTP routes
-docs/                           # DEMO.md, THREAT_MODEL.md, STORAGE_BACKENDS.md
+docs/                           # DEMO.md, THREAT_MODEL.md, STATE_MODEL.md, STORAGE_BACKENDS.md
 spec/                           # tests + fixtures/hash_vectors.json
 data/chain.json                 # persisted chain (created at runtime)
 ```
@@ -109,7 +109,7 @@ data/chain.json                 # persisted chain (created at runtime)
 ## Roadmap
 
 1. Tutorial + hardening: PoW blocks, HTTP API, validation, rate limits, write auth (current)
-2. State model (UTXO or accounts)
+2. State model — [UTXO design](docs/STATE_MODEL.md) (Phase 5 blocked until approved)
 3. P2P networking and reorg handling
 4. Adjustable difficulty retargeting
 5. Merkle anchoring API (hash on-chain, payload off-chain)
