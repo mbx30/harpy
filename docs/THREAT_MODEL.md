@@ -4,7 +4,7 @@ Harpy is an **educational, single-node** proof-of-work blockchain with an open H
 
 **Scope:** one Kemal process, JSON file persistence, UTXO state, PoW with difficulty retargeting, cumulative-work fork choice.
 
-**Out of scope (deferred):** P2P gossip, eclipse/partition resistance, production key management, multi-node consensus. See [STATE_MODEL.md](./STATE_MODEL.md) for the implemented UTXO model.
+**Out of scope (deferred):** production key management, multi-node deployment hardening beyond Phase 5 P2P. Routing/BGP partition surface: [ROUTING_PARTITION.md](./ROUTING_PARTITION.md) ([MIC-87](https://linear.app/mbx2/issue/MIC-87)).
 
 ## Layer taxonomy
 

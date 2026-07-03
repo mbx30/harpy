@@ -14,8 +14,12 @@ module Harpy
     DEFAULT_RATE_LIMIT_MAX      =  2
     DEFAULT_RATE_LIMIT_WINDOW_S = 10
 
+    DEFAULT_P2P_PORT      = 9333
+    MAX_P2P_MESSAGE_BYTES = 512 * 1024
+
     # Bind to loopback by default; require an explicit opt-in to expose on the LAN/public interfaces.
     DEFAULT_BIND_HOST = "127.0.0.1"
+    DEFAULT_HTTP_PORT = 3000
 
     def max_request_body_bytes : Int32
       MAX_REQUEST_BODY_BYTES
@@ -55,6 +59,15 @@ module Harpy
       DEFAULT_BIND_HOST
     end
 
+    def http_port : Int32
+      if value = ENV["HARPY_HTTP_PORT"]? || ENV["PORT"]?
+        parsed = value.to_i
+        return parsed if parsed > 0
+      end
+
+      DEFAULT_HTTP_PORT
+    end
+
     # Whether to trust the `X-Forwarded-For` header for client identification
     # (rate limiting). Off by default: when the node is reached directly, that
     # header is fully attacker-controlled, so honoring it lets a client forge a
@@ -86,6 +99,37 @@ module Harpy
       end
 
       DEFAULT_RATE_LIMIT_WINDOW_S
+    end
+
+    def p2p_enabled? : Bool
+      ENV["HARPY_P2P_DISABLE"]? != "1"
+    end
+
+    def p2p_port : Int32
+      if value = ENV["HARPY_P2P_PORT"]?
+        parsed = value.to_i
+        return parsed if parsed > 0
+      end
+
+      DEFAULT_P2P_PORT
+    end
+
+    def p2p_peers : Array(String)
+      raw = ENV["HARPY_P2P_PEERS"]?
+      return [] of String unless raw
+
+      raw.split(',').map(&.strip).reject(&.empty?)
+    end
+
+    def anchor_peers : Array(String)
+      raw = ENV["HARPY_ANCHOR_PEERS"]?
+      return [] of String unless raw
+
+      raw.split(',').map(&.strip).reject(&.empty?)
+    end
+
+    def max_p2p_message_bytes : Int32
+      MAX_P2P_MESSAGE_BYTES
     end
 
     def write_authorized?(request : HTTP::Request, key : String? = api_key) : Bool

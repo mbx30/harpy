@@ -1,5 +1,6 @@
 require "spec"
 require "../src/harpy/*"
+require "../src/harpy/p2p"
 
 module Harpy::SpecHelpers
   def self.mined_genesis(difficulty : Int32 = 0, miner_pubkey : String = Harpy::Economics.genesis_pubkey) : Harpy::Block

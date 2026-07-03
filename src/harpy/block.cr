@@ -136,9 +136,9 @@ module Harpy
     def self.parse_block_tx(json : JSON::Any) : BlockTx
       obj = json.as_h
       if obj["height"]?
-        CoinbaseTx.from_json(json)
+        CoinbaseTx.from_json(json.to_json)
       else
-        Transaction.from_json(json)
+        Transaction.from_json(json.to_json)
       end
     end
   end

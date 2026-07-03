@@ -10,6 +10,7 @@
 !/docs/SYBIL_RESISTANCE.md
 !/docs/POS_CHECKPOINTING.md
 !/docs/INCIDENT_RESPONSE.md
+!/docs/ROUTING_PARTITION.md
 /lib/
 /bin/
 /.shards/
