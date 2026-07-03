@@ -1,4 +1,5 @@
 require "kemal"
+require "log"
 require "./config"
 require "./rate_limit"
 
@@ -6,12 +7,22 @@ module Harpy
   module Server
     extend self
 
+    Log = ::Log.for("harpy.server")
+
     @@chain : Chain? = nil
     @@storage_path = Config.storage_path
     @@api_key : String? = Config.api_key
 
     def chain : Chain
       @@chain ||= Storage.load_or_genesis(@@storage_path)
+    end
+
+    # Reflects the on-disk chain file's mtime, so it's accurate across process
+    # restarts without tracking separate in-memory state.
+    def last_saved_at : Time?
+      return nil unless File.exists?(@@storage_path)
+
+      File.info(@@storage_path).modification_time
     end
 
     def reset!(
@@ -26,6 +37,7 @@ module Harpy
     def configure_kemal!(rate_limiter : RateLimiter = RateLimiter.from_env)
       Kemal.config do |config|
         config.max_request_body_size = Config.max_request_body_bytes
+        config.host_binding = Config.bind_host
       end
 
       Kemal.config.add_handler RateLimitHandler.new(rate_limiter)
@@ -39,6 +51,13 @@ module Harpy
     def register_routes!
       get "/" do
         chain.blocks.to_json
+      end
+
+      get "/health" do
+        {
+          valid:         chain.valid?,
+          last_saved_at: last_saved_at.try(&.to_s),
+        }.to_json
       end
 
       get "/validate" do
@@ -89,10 +108,12 @@ module Harpy
         new_block = Miner.mine_next(chain.tip, data, verbose: true)
 
         unless chain.append!(new_block)
+          Log.warn { "block_rejected index=#{new_block.index} prev_hash=#{new_block.prev_hash}" }
           halt env, status_code: 422, response: %({"error":"block rejected by chain validation"})
         end
 
         Storage.save(chain, @@storage_path)
+        Log.info { "block_accepted index=#{new_block.index} hash=#{new_block.hash} height=#{chain.height}" }
         new_block.to_json
       end
     end

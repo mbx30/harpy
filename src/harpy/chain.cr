@@ -24,6 +24,7 @@ class Harpy::Chain
     return false unless genesis.prev_hash.empty?
     return false unless genesis.hash_matches?
     return false unless genesis.pow_valid?
+    return false unless genesis.data_within_limit?
 
     @blocks.each_with_index do |block, index|
       next if index == 0

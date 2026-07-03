@@ -55,6 +55,17 @@ ensure
   File.delete?(storage_path) if storage_path && File.exists?(storage_path)
 end
 
+describe "GET /health" do
+  it "reports chain validity and a last-saved timestamp" do
+    response = harpy_test_response("GET", "/health")
+
+    response.status_code.should eq(200)
+    body = JSON.parse(response.body)
+    body["valid"].as_bool.should be_true
+    body["last_saved_at"].as_s.should_not be_empty
+  end
+end
+
 describe "POST /new-block request limits" do
   it "rejects HTTP bodies larger than the configured limit with 413" do
     oversized = %({"data":"#{"x" * (Harpy::Config.max_request_body_bytes + 1)}"})

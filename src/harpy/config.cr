@@ -13,6 +13,9 @@ module Harpy
     DEFAULT_RATE_LIMIT_MAX      =  2
     DEFAULT_RATE_LIMIT_WINDOW_S = 10
 
+    # Bind to loopback by default; require an explicit opt-in to expose on the LAN/public interfaces.
+    DEFAULT_BIND_HOST = "127.0.0.1"
+
     def max_request_body_bytes : Int32
       MAX_REQUEST_BODY_BYTES
     end
@@ -41,6 +44,14 @@ module Harpy
 
     def api_key : String?
       ENV["HARPY_API_KEY"]?
+    end
+
+    def bind_host : String
+      if value = ENV["HARPY_BIND_HOST"]?
+        return value unless value.empty?
+      end
+
+      DEFAULT_BIND_HOST
     end
 
     def rate_limit_max : Int32

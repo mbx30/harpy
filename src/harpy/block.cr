@@ -51,12 +51,20 @@ module Harpy
       @hash == computed_hash
     end
 
+    # Re-enforces the HTTP-layer cap (Config.max_block_data_bytes) so a block
+    # loaded from storage, gossip, or a fork-choice replacement can't smuggle
+    # an oversize payload past validation.
+    def data_within_limit? : Bool
+      @data.bytesize <= Config.max_block_data_bytes
+    end
+
     def valid_against?(previous : Block) : Bool
       return false unless @index == previous.index + 1
       return false unless @prev_hash == previous.hash
       return false unless timestamp_not_before?(previous)
       return false unless hash_matches?
       return false unless pow_valid?
+      return false unless data_within_limit?
 
       true
     end

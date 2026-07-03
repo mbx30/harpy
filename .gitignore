@@ -2,6 +2,8 @@
 /docs/
 !/docs/DEMO.md
 !/docs/THREAT_MODEL.md
+!/docs/STATE_MODEL.md
+!/docs/STORAGE_BACKENDS.md
 /lib/
 /bin/
 /.shards/

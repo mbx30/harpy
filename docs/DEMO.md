@@ -26,6 +26,7 @@ On first boot the server mines a **genesis block** and saves it to `data/chain.j
 | Step | Command | What to observe |
 |------|---------|-----------------|
 | View chain | `curl http://localhost:3000/` | JSON array; genesis `hash` starts with `000` |
+| Health check | `curl http://localhost:3000/health` | `{"valid":true,"last_saved_at":"..."}` — for load-balancer/deployment monitoring |
 | Validate | `curl http://localhost:3000/validate` | `{"valid":true,"height":1,"work":4096,"tip":"..."}` — `work` is cumulative PoW score |
 | Mine a block | `curl -X POST http://localhost:3000/new-block -H "Content-Type: application/json" -d '{"data":"hello harpy"}'` | Mined block JSON; nonce logged in server output |
 | Lookup block | `curl http://localhost:3000/block/1` | Block 1 links to genesis via `prev_hash` |
@@ -65,6 +66,8 @@ Invalid values (negative or non-numeric) fall back to `DEFAULT_DIFFICULTY` (3).
 | Block `data` field | 32 KiB (`MAX_BLOCK_DATA_BYTES`) | 400 Bad Request |
 
 Oversized bodies are rejected before JSON parsing/mining. Keep payloads well under 32 KiB for the `data` string itself.
+
+The block `data` cap is also enforced in `Block#valid_against?` (and genesis validation), not just at the HTTP layer — so a block loaded from storage, replayed via fork choice, or arriving from a future peer can't smuggle an oversize payload past validation.
 
 ## 5. Write authentication (`HARPY_API_KEY`)
 
@@ -123,7 +126,52 @@ HARPY_DATA_DIR=/var/lib/harpy/chain.json crystal run src/harpy.cr
 
 On boot, an existing file is loaded and fully validated (`Chain#valid?`). A tampered or invalid chain raises `StorageError` and refuses to start.
 
-## 8. Automated tests
+### Durability and integrity
+
+- **Atomic writes:** the chain is written to a sibling `chain.json.tmp` then renamed over the target, so a crash mid-write can never leave a partially written file — you always have the previous chain or the complete new one.
+- **Checksum envelope:** the file is `{"checksum": "<sha256>", "blocks": [...]}`, where the checksum covers the serialized blocks. On load the checksum is re-verified *before* the chain is built, so bit-rot, truncation, or manual edits are rejected with a `StorageError` (distinct from semantic `Chain#valid?` failures). Legacy bare-array files still load (with a warning).
+- Storage sits behind a small backend interface — see [STORAGE_BACKENDS.md](./STORAGE_BACKENDS.md) for the design and the embedded-KV spike.
+
+## 8. CLI commands
+
+With no arguments `harpy` starts the HTTP server (the default). Subcommands are scriptable wrappers over the storage layer and exit non-zero on failure — handy for CI/ops:
+
+```bash
+# Validate a chain file (exit 0 if valid, 1 on corruption or invalid chain)
+crystal run src/harpy.cr -- verify-chain --path data/chain.json
+
+# Export the chain's blocks as JSON to a file (or stdout if --out is omitted)
+crystal run src/harpy.cr -- export-chain --path data/chain.json --out backup.json
+
+# Usage
+crystal run src/harpy.cr -- help
+```
+
+With a built binary (`shards build`): `./bin/harpy verify-chain --path data/chain.json`.
+
+## 9. Network binding (`HARPY_BIND_HOST`)
+
+By default Harpy binds to `127.0.0.1` — the write API is not reachable outside the local machine unless you opt in.
+
+```bash
+# Local only (default)
+crystal run src/harpy.cr
+
+# Expose on the LAN for a demo (combine with HARPY_API_KEY in anything beyond a trusted network)
+HARPY_BIND_HOST=0.0.0.0 HARPY_API_KEY=dev-secret crystal run src/harpy.cr
+```
+
+## 10. Structured logging
+
+Block accepted/rejected events and chain-load validation failures are logged via Crystal's stdlib `Log` module (no secrets — request bodies and API keys are never logged):
+
+```
+2026-07-02T18:56:49Z   INFO - harpy.server: block_accepted index=1 hash=000abc... height=2
+2026-07-02T18:56:50Z   WARN - harpy.server: block_rejected index=2 prev_hash=deadbeef
+2026-07-02T18:56:51Z  ERROR - harpy.storage: chain_load_failed path=data/chain.json reason=validation_failed
+```
+
+## 11. Automated tests
 
 ```bash
 crystal spec
@@ -140,7 +188,7 @@ Specs use `difficulty: 0` in helpers so mining finishes instantly. Canonical has
 - Linkage: `index` increments and `prev_hash` matches parent
 - Timestamps: child `timestamp` must be **≥ parent** (monotonic)
 
-## 9. Research context
+## 12. Research context
 
 | Layer | What Harpy demonstrates today | Deferred |
 |-------|------------------------------|----------|
@@ -155,7 +203,7 @@ Further reading (attached to Linear issues):
 - [Production readiness research](https://app.notion.com/p/berrymichael/production-ready-29c4b9c70df84cc8a5a503b845c80541)
 - [Security hardening plan](https://app.notion.com/p/3919cb079ddb8132ae08f16afdd9f0a0)
 
-## 10. Anchoring endgame
+## 13. Anchoring endgame
 
 Harpy's intended integration pattern is **hash on-chain, data off-chain**: applications commit digests (e.g. Merkle roots of audit logs or records) while keeping payloads in IPFS, object storage, or local systems. The chain proves *that* a hash existed at a point in time — it is not a database for arbitrary large blobs.
 

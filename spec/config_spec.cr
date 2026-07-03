@@ -61,6 +61,18 @@ describe Harpy::Config do
     end
   end
 
+  it "binds to loopback by default" do
+    Harpy::SpecHelpers.with_env("HARPY_BIND_HOST", nil) do
+      Harpy::Config.bind_host.should eq("127.0.0.1")
+    end
+  end
+
+  it "reads bind host from HARPY_BIND_HOST" do
+    Harpy::SpecHelpers.with_env("HARPY_BIND_HOST", "0.0.0.0") do
+      Harpy::Config.bind_host.should eq("0.0.0.0")
+    end
+  end
+
   it "allows writes when HARPY_API_KEY is unset" do
     request = HTTP::Request.new("POST", "/new-block")
     Harpy::SpecHelpers.with_env("HARPY_API_KEY", nil) do

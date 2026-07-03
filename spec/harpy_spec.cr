@@ -58,6 +58,22 @@ describe Harpy::Block do
 
     backdated.valid_against?(genesis).should be_false
   end
+
+  it "accepts a block with data at the configured size cap" do
+    genesis = Harpy::SpecHelpers.mined_genesis
+    next_block = Harpy::Miner.mine_next(genesis, "y" * Harpy::Config.max_block_data_bytes)
+
+    next_block.data_within_limit?.should be_true
+    next_block.valid_against?(genesis).should be_true
+  end
+
+  it "rejects a block with data exceeding the configured size cap, even if mined and hash-valid" do
+    genesis = Harpy::SpecHelpers.mined_genesis
+    oversized = Harpy::Miner.mine_next(genesis, "y" * (Harpy::Config.max_block_data_bytes + 1))
+
+    oversized.data_within_limit?.should be_false
+    oversized.valid_against?(genesis).should be_false
+  end
 end
 
 describe Harpy::Chain do
@@ -131,6 +147,174 @@ describe Harpy::Storage do
       Harpy::Storage.save(invalid, path)
       expect_raises Harpy::StorageError do
         Harpy::Storage.load_or_genesis(path)
+      end
+    ensure
+      File.delete?(path) if File.exists?(path)
+    end
+  end
+
+  it "refuses to boot from a stored chain with an oversize genesis payload" do
+    path = File.tempname
+    oversized_genesis = Harpy::Miner.mine(
+      Harpy::Block.genesis("y" * (Harpy::Config.max_block_data_bytes + 1), difficulty: 0),
+    )
+    invalid = Harpy::Chain.new([oversized_genesis])
+
+    begin
+      Harpy::Storage.save(invalid, path)
+      expect_raises Harpy::StorageError do
+        Harpy::Storage.load_or_genesis(path)
+      end
+    ensure
+      File.delete?(path) if File.exists?(path)
+    end
+  end
+
+  it "does not leave a temp file behind after a successful save" do
+    path = File.tempname
+    chain = Harpy::SpecHelpers.build_chain(2)
+
+    begin
+      Harpy::Storage.save(chain, path)
+      File.exists?("#{path}.tmp").should be_false
+    ensure
+      File.delete?(path) if File.exists?(path)
+      File.delete?("#{path}.tmp") if File.exists?("#{path}.tmp")
+    end
+  end
+
+  it "overwrites an existing file atomically on repeated saves" do
+    path = File.tempname
+    first = Harpy::SpecHelpers.build_chain(2)
+    second = Harpy::SpecHelpers.build_chain(3)
+
+    begin
+      Harpy::Storage.save(first, path)
+      Harpy::Storage.save(second, path)
+
+      loaded = Harpy::Storage.load(path)
+      loaded.should_not be_nil
+      loaded.not_nil!.height.should eq(3)
+      loaded.not_nil!.blocks.to_json.should eq(second.blocks.to_json)
+    ensure
+      File.delete?(path) if File.exists?(path)
+    end
+  end
+
+  it "persists a checksum envelope on disk" do
+    path = File.tempname
+    chain = Harpy::SpecHelpers.build_chain(2)
+
+    begin
+      Harpy::Storage.save(chain, path)
+      parsed = JSON.parse(File.read(path))
+      parsed["checksum"].as_s.size.should eq(64)
+      parsed["blocks"].as_a.size.should eq(2)
+    ensure
+      File.delete?(path) if File.exists?(path)
+    end
+  end
+
+  it "rejects a file whose checksum field was tampered" do
+    path = File.tempname
+    chain = Harpy::SpecHelpers.build_chain(2)
+
+    begin
+      # Correct blocks, deliberately wrong checksum.
+      forged = Harpy::Storage::Envelope.new("0" * 64, chain.blocks)
+      File.write(path, forged.to_json)
+
+      expect_raises Harpy::StorageError do
+        Harpy::Storage.load(path)
+      end
+    ensure
+      File.delete?(path) if File.exists?(path)
+    end
+  end
+
+  it "rejects a file whose block bytes were tampered but checksum left intact" do
+    path = File.tempname
+    chain = Harpy::SpecHelpers.build_chain(2)
+
+    begin
+      Harpy::Storage.save(chain, path)
+      # Mutate a block's data in place; the stored checksum no longer matches.
+      tampered = File.read(path).sub("block 1", "hacked!")
+      File.write(path, tampered)
+
+      expect_raises Harpy::StorageError do
+        Harpy::Storage.load(path)
+      end
+    ensure
+      File.delete?(path) if File.exists?(path)
+    end
+  end
+
+  it "loads a legacy bare-array chain file without a checksum envelope" do
+    path = File.tempname
+    chain = Harpy::SpecHelpers.build_chain(2)
+
+    begin
+      # Legacy format: a bare JSON array of blocks, no envelope.
+      File.write(path, chain.blocks.to_json)
+
+      loaded = Harpy::Storage.load(path)
+      loaded.should_not be_nil
+      loaded.not_nil!.blocks.to_json.should eq(chain.blocks.to_json)
+    ensure
+      File.delete?(path) if File.exists?(path)
+    end
+  end
+
+  it "rejects a chain file that is not valid JSON" do
+    path = File.tempname
+
+    begin
+      File.write(path, "{ this is not json")
+
+      expect_raises Harpy::StorageError do
+        Harpy::Storage.load(path)
+      end
+    ensure
+      File.delete?(path) if File.exists?(path)
+    end
+  end
+end
+
+describe Harpy::Storage::FileBackend do
+  it "round-trips a chain through the backend interface" do
+    path = File.tempname
+    backend = Harpy::Storage::FileBackend.new(path)
+    chain = Harpy::SpecHelpers.build_chain(2)
+
+    begin
+      backend.save(chain)
+      loaded = backend.load
+
+      loaded.should_not be_nil
+      loaded.not_nil!.valid?.should be_true
+      loaded.not_nil!.blocks.to_json.should eq(chain.blocks.to_json)
+    ensure
+      File.delete?(path) if File.exists?(path)
+    end
+  end
+
+  it "returns nil when nothing has been persisted yet" do
+    path = File.tempname
+    Harpy::Storage::FileBackend.new(path).load.should be_nil
+  end
+
+  it "rejects a corrupted store through the backend interface" do
+    path = File.tempname
+    backend = Harpy::Storage::FileBackend.new(path)
+    chain = Harpy::SpecHelpers.build_chain(2)
+
+    begin
+      backend.save(chain)
+      File.write(path, File.read(path).sub("block 1", "hacked!"))
+
+      expect_raises Harpy::StorageError do
+        backend.load
       end
     ensure
       File.delete?(path) if File.exists?(path)

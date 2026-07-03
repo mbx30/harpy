@@ -79,7 +79,7 @@ describe "stored chain boot validation" do
 
     begin
       Harpy::Storage.save(chain, path)
-      blocks = Array(Harpy::Block).from_json(File.read(path))
+      blocks = chain.blocks.dup
       blocks[1] = Harpy::Block.new(
         blocks[1].index,
         blocks[1].timestamp,
@@ -89,7 +89,9 @@ describe "stored chain boot validation" do
         blocks[1].nonce,
         "deadbeef",
       )
-      File.write(path, blocks.to_json)
+      # Re-wrap with a matching checksum so the tamper passes checksum
+      # verification and must be caught by semantic chain validation instead.
+      File.write(path, Harpy::Storage::Envelope.wrap(blocks).to_json)
 
       expect_raises Harpy::StorageError do
         Harpy::Storage.load_or_genesis(path)
