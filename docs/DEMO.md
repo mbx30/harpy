@@ -1,8 +1,8 @@
 # Harpy demo walkthrough
 
-This guide walks through running Harpy, exercising the HTTP API, changing proof-of-work difficulty, and running the test suite.
+This guide walks through running Harpy, exercising the HTTP API, changing proof-of-work difficulty, running multiple nodes over P2P, and running the test suite.
 
-Harpy is an **educational** single-node chain. Its long-term direction is a **verification and anchoring layer** (hash on-chain, payload off-chain) — not a general-purpose data store. See [MIC-81](https://linear.app/mbx2/issue/MIC-81) for the future Merkle anchoring API.
+Harpy is an **educational** chain with UTXO transactions and optional P2P gossip. Its long-term direction is a **verification and anchoring layer** (hash on-chain, payload off-chain) — see [MIC-81](https://linear.app/mbx2/issue/MIC-81).
 
 ## Prerequisites
 
@@ -19,31 +19,31 @@ rm -f data/chain.json
 crystal run src/harpy.cr
 ```
 
-On first boot the server mines a **genesis block** and saves it to `data/chain.json`. Default difficulty is **3** leading hex zeros (`Harpy::Block::DEFAULT_DIFFICULTY`).
+On first boot the server mines a **genesis block** (coinbase to the default genesis pubkey) and saves it to `data/chain.json`. Default difficulty is **3** leading hex zeros.
 
 ## 2. HTTP demo (curl)
 
 | Step | Command | What to observe |
 |------|---------|-----------------|
 | View chain | `curl http://localhost:3000/` | JSON array; genesis `hash` starts with `000` |
-| Health check | `curl http://localhost:3000/health` | `{"valid":true,"last_saved_at":"..."}` — for load-balancer/deployment monitoring |
-| Validate | `curl http://localhost:3000/validate` | `{"valid":true,"height":1,"work":4096,"tip":"..."}` — `work` is cumulative PoW score |
-| Mine a block | `curl -X POST http://localhost:3000/new-block -H "Content-Type: application/json" -d '{"data":"hello harpy"}'` | Mined block JSON; nonce logged in server output |
+| Health check | `curl http://localhost:3000/health` | `valid`, `last_saved_at`, and `p2p` status |
+| Validate | `curl http://localhost:3000/validate` | `height`, cumulative `work`, `tip` hash |
+| Mempool | `curl http://localhost:3000/mempool` | `{"transactions":[]}` on a fresh chain |
+| Mine a block | `curl -X POST http://localhost:3000/mine -H "Content-Type: application/json" -d '{"miner_pubkey":"a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"}'` | Block JSON with coinbase tx; nonce logged |
 | Lookup block | `curl http://localhost:3000/block/1` | Block 1 links to genesis via `prev_hash` |
-| Persistence | `cat data/chain.json` | Same blocks on disk |
+| Persistence | `cat data/chain.json` | Checksum envelope with blocks array |
+
+`miner_pubkey` must be a 64-character hex Ed25519 public key. The tutorial default genesis pubkey is `a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456` (override genesis with `HARPY_GENESIS_PUBKEY`).
+
+Signed user transactions use `POST /tx` — see [STATE_MODEL.md](./STATE_MODEL.md) for the JSON schema and signing digest.
 
 ## 3. Change mining difficulty (`HARPY_DIFFICULTY`)
 
-Difficulty applies **only when creating a new chain** (no `data/chain.json` yet). Existing chains keep their stored difficulty.
+Difficulty applies **only when creating a new chain** (no `data/chain.json` yet). Existing chains keep their stored difficulty; retargeting adjusts every 10 blocks toward a 60-second target.
 
 ```bash
 rm -f data/chain.json
-HARPY_DIFFICULTY=1 crystal run src/harpy.cr   # faster genesis (~1 hex zero)
-```
-
-```bash
-rm -f data/chain.json
-HARPY_DIFFICULTY=4 crystal run src/harpy.cr   # slower genesis (~4 hex zeros)
+HARPY_DIFFICULTY=1 crystal run src/harpy.cr
 ```
 
 | Difficulty | Leading zeros | Approx. average hashes |
@@ -52,127 +52,115 @@ HARPY_DIFFICULTY=4 crystal run src/harpy.cr   # slower genesis (~4 hex zeros)
 | 3 | `000` | 4,096 |
 | 4 | `0000` | 65,536 |
 
-New blocks inherit difficulty from the chain tip (`Miner.mine_next` copies the previous block's difficulty).
-
 Invalid values (negative or non-numeric) fall back to `DEFAULT_DIFFICULTY` (3).
 
 ## 4. Request size limits
 
-`POST /new-block` enforces two caps (see `Harpy::Config`):
+`POST /tx` and `POST /mine` enforce caps (see `Harpy::Config`):
 
 | Limit | Default | HTTP status |
 |-------|---------|-------------|
-| JSON request body | 64 KiB (`MAX_REQUEST_BODY_BYTES`) | 413 Payload Too Large |
-| Block `data` field | 32 KiB (`MAX_BLOCK_DATA_BYTES`) | 400 Bad Request |
+| JSON request body | 64 KiB | 413 Payload Too Large |
+| Block transactions JSON | 32 KiB | 400 / validation reject |
 
-Oversized bodies are rejected before JSON parsing/mining. Keep payloads well under 32 KiB for the `data` string itself.
-
-The block `data` cap is also enforced in `Block#valid_against?` (and genesis validation), not just at the HTTP layer — so a block loaded from storage, replayed via fork choice, or arriving from a future peer can't smuggle an oversize payload past validation.
+Oversized bodies are rejected before parsing. The transactions cap is also enforced in `Block#valid_against?`, not only at the HTTP layer.
 
 ## 5. Write authentication (`HARPY_API_KEY`)
 
-By default, `POST /new-block` accepts anonymous writes (local development only). Set `HARPY_API_KEY` to require credentials on every mining request.
+By default, `POST /tx` and `POST /mine` accept anonymous writes (local development only). Set `HARPY_API_KEY` to require credentials.
 
 ```bash
 HARPY_API_KEY=dev-secret crystal run src/harpy.cr
 ```
 
-| Header | Example |
-|--------|---------|
-| `Authorization` | `Bearer dev-secret` |
-| `X-API-Key` | `dev-secret` |
-
 ```bash
-# 401 without credentials
-curl -X POST http://localhost:3000/new-block \
-  -H "Content-Type: application/json" \
-  -d '{"data":"hello"}'
-
-# 200 with Bearer token
-curl -X POST http://localhost:3000/new-block \
+curl -X POST http://localhost:3000/mine \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer dev-secret" \
-  -d '{"data":"hello harpy"}'
+  -d '{"miner_pubkey":"a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"}'
 ```
 
-Read endpoints (`GET /`, `/validate`, `/block/:index`) remain unauthenticated.
+Read endpoints remain unauthenticated.
 
 ## 6. Rate limiting
 
-`POST /new-block` uses a per-client token bucket (default: **2** requests per **10** seconds). Tune with:
+`POST /tx` and `POST /mine` use a per-client token bucket (default: **2** requests per **10** seconds).
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `HARPY_RATE_LIMIT` | `2` | Bucket capacity (max burst) |
-| `HARPY_RATE_LIMIT_WINDOW` | `10` | Seconds between token refills |
-| `HARPY_TRUST_PROXY` | unset | Trust `X-Forwarded-For` for client identity (behind a trusted proxy only) |
+| `HARPY_RATE_LIMIT` | `2` | Bucket capacity |
+| `HARPY_RATE_LIMIT_WINDOW` | `10` | Seconds between refills |
+| `HARPY_TRUST_PROXY` | unset | Trust `X-Forwarded-For` (trusted proxy only) |
 
-Client identity is the TCP remote address. The first address in `X-Forwarded-For` is used **only when `HARPY_TRUST_PROXY` is set** — on a directly-reachable node that header is attacker-controlled, so trusting it would let a client forge a new identity per request and bypass the limit. Exceeding the limit returns HTTP **429** with `{"error":"rate limit exceeded"}`. `GET` routes are not rate limited.
-
-```bash
-HARPY_RATE_LIMIT=1 HARPY_RATE_LIMIT_WINDOW=60 crystal run src/harpy.cr
-```
+Exceeding the limit returns HTTP **429**. `GET` routes are not rate limited.
 
 ## 7. Custom chain storage (`HARPY_DATA_DIR`)
 
-Default persistence is `data/chain.json`. Override the location for tests or deployments:
-
 ```bash
-# Directory — writes to custom-data/chain.json
-HARPY_DATA_DIR=custom-data crystal run src/harpy.cr
-
-# Explicit file path
+HARPY_DATA_DIR=custom-data crystal run src/harpy.cr          # → custom-data/chain.json
 HARPY_DATA_DIR=/var/lib/harpy/chain.json crystal run src/harpy.cr
 ```
 
-On boot, an existing file is loaded and fully validated (`Chain#valid?`). A tampered or invalid chain raises `StorageError` and refuses to start.
+On boot, existing files are loaded and validated. Tampered chains raise `StorageError` and refuse to start.
 
 ### Durability and integrity
 
-- **Atomic writes:** the chain is written to a sibling `chain.json.tmp` then renamed over the target, so a crash mid-write can never leave a partially written file — you always have the previous chain or the complete new one.
-- **Checksum envelope:** the file is `{"checksum": "<sha256>", "blocks": [...]}`, where the checksum covers the serialized blocks. On load the checksum is re-verified *before* the chain is built, so bit-rot, truncation, or manual edits are rejected with a `StorageError` (distinct from semantic `Chain#valid?` failures). Legacy bare-array files still load (with a warning).
-- Storage sits behind a small backend interface — see [STORAGE_BACKENDS.md](./STORAGE_BACKENDS.md) for the design and the embedded-KV spike.
+- **Atomic writes:** temp file + rename
+- **Checksum envelope:** `{"checksum":"…","blocks":[…]}` verified before chain construction
+- **Backend interface:** see [STORAGE_BACKENDS.md](./STORAGE_BACKENDS.md)
 
 ## 8. CLI commands
 
-With no arguments `harpy` starts the HTTP server (the default). Subcommands are scriptable wrappers over the storage layer and exit non-zero on failure — handy for CI/ops:
-
 ```bash
-# Validate a chain file (exit 0 if valid, 1 on corruption or invalid chain)
 crystal run src/harpy.cr -- verify-chain --path data/chain.json
-
-# Export the chain's blocks as JSON to a file (or stdout if --out is omitted)
 crystal run src/harpy.cr -- export-chain --path data/chain.json --out backup.json
-
-# Usage
 crystal run src/harpy.cr -- help
 ```
 
-With a built binary (`shards build`): `./bin/harpy verify-chain --path data/chain.json`.
+## 9. Network binding
 
-## 9. Network binding (`HARPY_BIND_HOST`)
-
-By default Harpy binds to `127.0.0.1` — the write API is not reachable outside the local machine unless you opt in.
+| Variable | Default | Scope |
+|----------|---------|-------|
+| `HARPY_BIND_HOST` | `127.0.0.1` | HTTP API only |
+| `HARPY_HTTP_PORT` / `PORT` | `3000` | HTTP API |
 
 ```bash
-# Local only (default)
-crystal run src/harpy.cr
-
-# Expose on the LAN for a demo (combine with HARPY_API_KEY in anything beyond a trusted network)
 HARPY_BIND_HOST=0.0.0.0 HARPY_API_KEY=dev-secret crystal run src/harpy.cr
 ```
 
-## 10. Structured logging
+P2P listens on `0.0.0.0:HARPY_P2P_PORT` separately — see [P2P.md](./P2P.md).
 
-Block accepted/rejected events and chain-load validation failures are logged via Crystal's stdlib `Log` module (no secrets — request bodies and API keys are never logged):
+## 10. Multi-node P2P demo
+
+P2P is on by default. Run two nodes with distinct data dirs and ports:
+
+```bash
+# Node A
+rm -f /tmp/harpy-a.json
+HARPY_DATA_DIR=/tmp/harpy-a.json HARPY_HTTP_PORT=3000 HARPY_P2P_PORT=9333 \
+  HARPY_DIFFICULTY=1 crystal run src/harpy.cr
+
+# Node B (copy A's chain file so genesis matches, then join)
+cp /tmp/harpy-a.json /tmp/harpy-b.json
+HARPY_DATA_DIR=/tmp/harpy-b.json HARPY_HTTP_PORT=3001 HARPY_P2P_PORT=9334 \
+  HARPY_P2P_PEERS=127.0.0.1:9333 HARPY_DIFFICULTY=1 crystal run src/harpy.cr
+```
+
+Mine on A; confirm B's height catches up via `curl http://localhost:3001/validate` and `curl http://localhost:3001/health`.
+
+Disable P2P for single-node-only: `HARPY_P2P_DISABLE=1`.
+
+Full protocol, limits, and troubleshooting: **[P2P.md](./P2P.md)**.
+
+## 11. Structured logging
 
 ```
-2026-07-02T18:56:49Z   INFO - harpy.server: block_accepted index=1 hash=000abc... height=2
-2026-07-02T18:56:50Z   WARN - harpy.server: block_rejected index=2 prev_hash=deadbeef
-2026-07-02T18:56:51Z  ERROR - harpy.storage: chain_load_failed path=data/chain.json reason=validation_failed
+INFO  - harpy.server: block_accepted index=1 hash=000abc... height=2
+INFO  - harpy.p2p: p2p_listening port=9333
+WARN  - harpy.server: block_rejected index=2 prev_hash=deadbeef
 ```
 
-## 11. Automated tests
+## 12. Automated tests
 
 ```bash
 crystal spec
@@ -180,32 +168,26 @@ crystal tool format --check
 shards build
 ```
 
-Specs use `difficulty: 0` in helpers so mining finishes instantly. Canonical hash vectors live in `spec/fixtures/hash_vectors.json` (see MIC-30).
+Specs use `difficulty: 0` in helpers so mining finishes instantly. Hash vectors: `spec/fixtures/hash_vectors.json`.
 
 ### Validation rules exercised in tests
 
-- Hash must match `computed_hash` (SHA-256 over a length-prefixed `harpy-block-v2` encoding of index, timestamp, data, prev_hash, nonce — **not** difficulty)
-- Proof-of-work: hash prefix matches `difficulty` leading zeros
-- Linkage: `index` increments and `prev_hash` matches parent
-- Timestamps: child `timestamp` must be **≥ parent** (monotonic)
+- Hash matches `computed_hash` (length-prefixed `harpy-block-v2` over index, timestamp, `merkle_root`, `prev_hash`, nonce)
+- PoW prefix matches `difficulty`
+- Linkage: `index` increments; `prev_hash` matches parent
+- Timestamps: child ≥ parent (monotonic)
+- Transactions: Ed25519 signatures, UTXO balance, `MIN_TX_FEE` floor
 
-## 12. Research context
+## 13. Research context
 
-| Layer | What Harpy demonstrates today | Deferred |
-|-------|------------------------------|----------|
-| **Tutorial** | PoW blocks, HTTP read/write, JSON persistence | P2P, UTXO/accounts |
-| **Production readiness** | Deterministic hashing, chain validation, invalid-chain rejection on boot | Atomic persistence, multi-node deployment |
-| **Hardening (Path A/B)** | Cumulative-work fork choice, per-IP rate limits, optional write auth, request/body size caps | P2P fork rules, global quotas, WAF |
+| Layer | Harpy demonstrates today | Deferred |
+|-------|--------------------------|----------|
+| **Tutorial** | PoW, UTXO, HTTP API, P2P gossip, reorgs | Production deployment |
+| **Hardening** | Cumulative-work fork choice, rate limits, write auth, eclipse detection | BGP monitoring, WAF, TLS |
+| **Anchoring** | Merkle roots in block headers | MIC-81 anchoring API |
 
-See **[THREAT_MODEL.md](./THREAT_MODEL.md)** for the full threat catalog (layers, assets, trust boundaries, Linear issue mapping).
+See **[THREAT_MODEL.md](./THREAT_MODEL.md)** for the threat catalog.
 
-Further reading (attached to Linear issues):
+## 14. Anchoring endgame
 
-- [Production readiness research](https://app.notion.com/p/berrymichael/production-ready-29c4b9c70df84cc8a5a503b845c80541)
-- [Security hardening plan](https://app.notion.com/p/3919cb079ddb8132ae08f16afdd9f0a0)
-
-## 13. Anchoring endgame
-
-Harpy's intended integration pattern is **hash on-chain, data off-chain**: applications commit digests (e.g. Merkle roots of audit logs or records) while keeping payloads in IPFS, object storage, or local systems. The chain proves *that* a hash existed at a point in time — it is not a database for arbitrary large blobs.
-
-That path is tracked separately as Merkle anchoring API work (MIC-81); this tutorial branch establishes the block and validation foundation underneath it.
+Applications commit digests (e.g. Merkle roots) on-chain while keeping payloads off-chain. The chain proves a hash existed at a point in time — it is not a database for arbitrary large blobs. Tracked as [MIC-81](https://linear.app/mbx2/issue/MIC-81).

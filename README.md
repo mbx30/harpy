@@ -4,7 +4,7 @@ A Crystal proof-of-work blockchain tutorial. Named after Harpocrates, the Greek 
 
 **Linear:** [harpy project](https://linear.app/mbx2/project/harpy-16c5704dd57d/overview)
 
-This is an educational, single-node chain — blocks linked by SHA-256, mined with a simple proof-of-work algorithm, exposed over HTTP. It is not a production blockchain.
+Educational PoW chain with UTXO transactions, HTTP API, optional P2P block gossip, and cumulative-work reorgs. Not production blockchain software.
 
 ## Prerequisites (Windows)
 
@@ -28,25 +28,27 @@ Or run the setup script:
 
 ## Getting started
 
-```powershell
+```bash
 shards install
 crystal run src/harpy.cr
 ```
 
-- **View chain:** `GET http://localhost:3000/`
-- **Health check:** `GET http://localhost:3000/health`
-- **Validate chain:** `GET http://localhost:3000/validate`
-- **Get block by index:** `GET http://localhost:3000/block/:index`
-- **Mine a block:** `POST http://localhost:3000/new-block` with JSON body `{ "data": "your block data" }`
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Full blockchain JSON |
+| `GET /health` | Chain validity, save timestamp, P2P status |
+| `GET /validate` | Validity, height, cumulative work, tip hash |
+| `GET /block/:index` | Single block |
+| `GET /mempool` | Pending transactions |
+| `POST /tx` | Submit signed transaction (mempool) |
+| `POST /mine` | Mine block with `{ "miner_pubkey": "..." }` |
 
-The chain is persisted to `data/chain.json` on startup and after each mined block (override with `HARPY_DATA_DIR`). Writes are atomic (temp file + rename) and the file carries a SHA-256 checksum envelope that is verified on load. See **[docs/STORAGE_BACKENDS.md](docs/STORAGE_BACKENDS.md)**.
+The chain persists to `data/chain.json` (override with `HARPY_DATA_DIR`). Writes are atomic with a SHA-256 checksum envelope — see **[docs/STORAGE_BACKENDS.md](docs/STORAGE_BACKENDS.md)**.
 
 ### CLI
 
-Running with no arguments starts the server. Subcommands operate on a chain file and exit non-zero on failure:
-
-```powershell
-crystal run src/harpy.cr -- verify-chain --path data/chain.json   # validate; exit 1 on corruption/invalid
+```bash
+crystal run src/harpy.cr -- verify-chain --path data/chain.json
 crystal run src/harpy.cr -- export-chain --path data/chain.json --out backup.json
 crystal run src/harpy.cr -- help
 ```
@@ -55,64 +57,61 @@ crystal run src/harpy.cr -- help
 
 | Variable | Purpose |
 |----------|---------|
-| `HARPY_DIFFICULTY` | Genesis PoW difficulty (only when creating a new chain) |
-| `HARPY_DATA_DIR` | Chain file path or parent directory (default `data/chain.json`) |
-| `HARPY_API_KEY` | Optional write auth for `POST /new-block` |
-| `HARPY_RATE_LIMIT` | Max mining requests per client per window (default `2`) |
+| `HARPY_DIFFICULTY` | Genesis PoW difficulty (new chain only) |
+| `HARPY_DATA_DIR` | Chain file path or parent directory |
+| `HARPY_API_KEY` | Optional write auth for `POST /tx` and `POST /mine` |
+| `HARPY_RATE_LIMIT` | Max write requests per client per window (default `2`) |
 | `HARPY_RATE_LIMIT_WINDOW` | Token-bucket refill interval in seconds (default `10`) |
-| `HARPY_BIND_HOST` | Interface to bind (default `127.0.0.1`; set `0.0.0.0` to expose on the LAN) |
-| `HARPY_TRUST_PROXY` | Trust `X-Forwarded-For` for per-client rate limiting (default off; enable only behind a trusted reverse proxy) |
+| `HARPY_BIND_HOST` | HTTP bind address (default `127.0.0.1`) |
+| `HARPY_HTTP_PORT` / `PORT` | HTTP port (default `3000`) |
+| `HARPY_TRUST_PROXY` | Trust `X-Forwarded-For` for rate limiting (trusted proxy only) |
+| `HARPY_P2P_DISABLE` | Set `1` to disable P2P |
+| `HARPY_P2P_PORT` | P2P TCP port (default `9333`) |
+| `HARPY_P2P_PEERS` | Comma-separated bootstrap peers |
+| `HARPY_ANCHOR_PEERS` | Trusted peers for eclipse countermeasures |
 
-Example — faster genesis for local demos:
+Example — local demo with faster genesis:
 
 ```bash
 rm -f data/chain.json
 HARPY_DIFFICULTY=1 crystal run src/harpy.cr
 ```
 
-Example — staging with write auth and tighter rate limits:
+Example — multi-node on one host:
 
 ```bash
-HARPY_API_KEY=change-me HARPY_RATE_LIMIT=1 HARPY_RATE_LIMIT_WINDOW=30 crystal run src/harpy.cr
+HARPY_DATA_DIR=/tmp/node-a.json HARPY_HTTP_PORT=3000 HARPY_P2P_PORT=9333 crystal run src/harpy.cr
+HARPY_DATA_DIR=/tmp/node-b.json HARPY_HTTP_PORT=3001 HARPY_P2P_PORT=9334 \
+  HARPY_P2P_PEERS=127.0.0.1:9333 crystal run src/harpy.cr
 ```
 
-See **[docs/DEMO.md](docs/DEMO.md)** for the full walkthrough, curl examples, auth headers, difficulty table, and testing steps.
+See **[docs/DEMO.md](docs/DEMO.md)** for curl walkthroughs and **[docs/P2P.md](docs/P2P.md)** for gossip, reorgs, and troubleshooting.
 
-Security posture for the open HTTP mining API is documented in **[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)** (layer taxonomy, assets, threat catalog, Linear issue mapping).
+Security posture: **[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)**.
 
 ## Development
 
 ```bash
-crystal spec                 # run tests
-crystal tool format          # format source
-shards build                 # build bin/harpy
+crystal spec
+crystal tool format
+shards build
 ```
 
 ## Project layout
 
 ```
 src/harpy.cr                    # entry point → CLI dispatch
-src/harpy/block.cr              # Block struct, SHA-256 hashing, validation
-src/harpy/chain.cr              # in-memory chain, append, fork replacement
-src/harpy/config.cr             # env config, size limits, write auth
-src/harpy/miner.cr              # proof-of-work mining loop
-src/harpy/rate_limit.cr         # per-IP token bucket on POST /new-block
-src/harpy/storage.cr            # storage facade, checksum envelope, genesis bootstrap
-src/harpy/storage/backend.cr    # abstract Backend interface
-src/harpy/storage/file_backend.cr # atomic file writes + checksum verification
-src/harpy/cli.cr                # verify-chain / export-chain subcommands
-src/harpy/server.cr             # Kemal HTTP routes
-docs/                           # DEMO.md, THREAT_MODEL.md, STATE_MODEL.md, STORAGE_BACKENDS.md
+src/harpy/                      # block, chain, state, mempool, miner, storage, server
+src/harpy/p2p/                  # gossip, protocol, orphan pool, peer manager
+docs/                           # DEMO, P2P, STATE_MODEL, THREAT_MODEL, STORAGE_BACKENDS, …
 spec/                           # tests + fixtures/hash_vectors.json
-data/chain.json                 # persisted chain (created at runtime)
 ```
 
 ## Roadmap
 
-1. Tutorial + hardening: PoW blocks, HTTP API, validation, rate limits, write auth (current)
-2. State model — [UTXO design](docs/STATE_MODEL.md) (Phase 5 blocked until approved)
-3. P2P networking and reorg handling
-4. Adjustable difficulty retargeting
-5. Merkle anchoring API (hash on-chain, payload off-chain)
+1. **Done:** PoW blocks, UTXO transactions, HTTP API, validation, rate limits, write auth
+2. **Done:** P2P gossip, orphan pool, cumulative-work reorgs — [docs/P2P.md](docs/P2P.md)
+3. **Done:** Atomic storage, checksum envelope — [docs/STORAGE_BACKENDS.md](docs/STORAGE_BACKENDS.md)
+4. Optional: embedded KV backend; Merkle anchoring API (MIC-81)
 
-See [AGENTS.md](./AGENTS.md) for agent-oriented guidance and references.
+See [AGENTS.md](./AGENTS.md) for agent-oriented guidance.

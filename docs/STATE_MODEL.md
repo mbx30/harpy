@@ -1,22 +1,20 @@
 # Harpy UTXO state model
 
-**Status:** Design gate — [GitHub #21](https://github.com/mbx30/harpy/issues/21)  
-**Milestone:** [Phase 4: State model & transaction security](https://github.com/mbx30/harpy/milestone/4) (due Aug 27)  
+**Status:** Implemented (Phase 4) — design gate for [#21](https://github.com/mbx30/harpy/issues/21)  
+**Milestone:** [Phase 4: State model & transaction security](https://github.com/mbx30/harpy/milestone/4)  
 **Linear:** [Harpy project](https://linear.app/mbx2/project/harpy-16c5704dd57d/overview)
 
-Harpy today stores arbitrary strings in `Block#data` and mines them via `POST /new-block`. Phase 4 replaces that free-form payload with a **UTXO-based transaction model**: signed spends, a coinbase reward, mempool validation, and per-block state transitions. This document is the design gate — implementation issues [#22–#27](https://github.com/mbx30/harpy/issues) must follow it exactly.
+Harpy uses a **UTXO-based transaction model**: signed spends, coinbase rewards, mempool validation, per-block state transitions, and UTXO-consistent reorgs when P2P delivers competing forks. This document records the design decisions that Phase 4 implementation followed.
 
-**Scope:** educational single-node chain. Persistence of the UTXO set piggybacks on chain replay (in memory); Phase 3 storage hardening runs in parallel and is not a blocker for the in-memory model.
+**Scope:** educational chain. UTXO set is replay-derived in memory on boot. Persistence is the block chain file — see [STORAGE_BACKENDS.md](./STORAGE_BACKENDS.md).
 
-**Out of scope for this design:** P2P gossip, reorg execution (schema only), difficulty retargeting, production key custody.
+**P2P (Phase 5):** implemented — gossip, orphan pool, and `Chain#accept_block!` reorgs. Operational guide: [P2P.md](./P2P.md).
 
 ---
 
-## Phase 5 gate
+## Phase 5 (P2P) — implemented
 
-> **Phase 5 (P2P networking, reorgs, multi-node sync) does not start until this document is reviewed, merged, and explicitly approved by the project owner.**
-
-No Crystal code for [#22–#27](https://github.com/mbx30/harpy/issues) should land before sign-off. The undo-log schema and hash-serialization rules defined here are prerequisites for [#31 Reorg handler](https://github.com/mbx30/harpy/issues/31); changing them after Phase 4 implementation would force a redesign.
+Phase 5 delivered P2P block gossip, orphan buffering, and `reorg_to!` with the undo log defined in §6. See [P2P.md](./P2P.md) for wire protocol, env vars, and multi-node setup.
 
 ---
 
@@ -373,14 +371,15 @@ Ordered dependency chain for Phase 4 implementation (not part of this design spr
 
 **Parallel track (non-blocking):** Phase 3 storage — atomic writes, checksum envelope ([#16–#18](https://github.com/mbx30/harpy/issues)) — can proceed alongside Phase 4; UTXO set remains replay-derived.
 
-**Blocked until this doc is approved:** Phase 5 [#28+](https://github.com/mbx30/harpy/issues) (P2P, orphans, reorg handler, multi-node tests).
+**Phase 4:** delivered per table above. **Phase 5 (P2P):** delivered — [P2P.md](./P2P.md).
 
 ---
 
 ## Related documents
 
 - [THREAT_MODEL.md](./THREAT_MODEL.md) — double-spend and unauthorized-write threats
-- [DEMO.md](./DEMO.md) — runbook (to be updated when Phase 4 API ships)
+- [P2P.md](./P2P.md) — gossip, reorgs, multi-node operations
+- [DEMO.md](./DEMO.md) — HTTP API runbook
 - [AGENTS.md](../AGENTS.md) — architecture and commands
 - [GitHub #21](https://github.com/mbx30/harpy/issues/21) — design gate issue
 - [MIC-81](https://linear.app/mbx2/issue/MIC-81) — future Merkle anchoring API

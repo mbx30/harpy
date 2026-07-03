@@ -1,10 +1,10 @@
 # Harpy threat model
 
-Harpy is an **educational, single-node** proof-of-work blockchain with an open HTTP API for signed transactions and mining. This document enumerates threats that apply **today** (no P2P networking) and maps them to mitigations in the codebase or deferred work in Linear.
+Harpy is an **educational** proof-of-work blockchain with an HTTP API for signed transactions and mining, plus an optional **P2P block gossip layer** (TCP JSON, cumulative-work reorgs). This document enumerates threats that apply to the current codebase and maps them to mitigations or deferred work in Linear.
 
-**Scope:** one Kemal process, JSON file persistence, UTXO state, PoW with difficulty retargeting, cumulative-work fork choice.
+**Scope:** Kemal HTTP server, optional P2P (`HARPY_P2P_DISABLE=1` for single-node), JSON file persistence, UTXO state, PoW with difficulty retargeting, cumulative-work fork choice.
 
-**Out of scope (deferred):** production key management, multi-node deployment hardening beyond Phase 5 P2P. Routing/BGP partition surface: [ROUTING_PARTITION.md](./ROUTING_PARTITION.md) ([MIC-87](https://linear.app/mbx2/issue/MIC-87)).
+**Out of scope (deferred):** production key management, BGP/RPKI monitoring, TLS termination. Routing partition surface: [ROUTING_PARTITION.md](./ROUTING_PARTITION.md) ([MIC-87](https://linear.app/mbx2/issue/MIC-87)). P2P operations: [P2P.md](./P2P.md).
 
 ## Layer taxonomy
 
@@ -13,7 +13,7 @@ Following layer-based blockchain security surveys ([Li et al. arXiv:1802.06993](
 | Layer | Harpy today | Primary risks |
 |-------|-------------|---------------|
 | **Consensus** | PoW, cumulative work fork choice, retargeting | Selfish mining, stale forks |
-| **Network** | None (HTTP only) | N/A until P2P → [MIC-54](https://linear.app/mbx2/issue/MIC-54) |
+| **Network** | P2P gossip (optional), peer limits, eclipse guard | Eclipse, inv spam, stale forks — [P2P.md](./P2P.md), [MIC-54](https://linear.app/mbx2/issue/MIC-54) |
 | **Node / API** | Kemal HTTP server | Mining DoS, mempool spam, unauthorized writes |
 | **Storage** | `chain.json` on disk | Tampering, partial writes |
 | **Cryptography** | SHA-256, Ed25519 tx signatures | Forgery, collision (theoretical) |
@@ -32,7 +32,7 @@ Following layer-based blockchain security surveys ([Li et al. arXiv:1802.06993](
 **Trust assumptions (tutorial):**
 
 - Operator controls the host and filesystem.
-- No adversarial P2P peers (single node).
+- P2P peers are untrusted; handshake requires matching `genesis_hash`; blocks are fully validated before connect/reorg.
 - PoW makes block extension costly; difficulty retargets every 10 blocks.
 
 ## Threat catalog
@@ -97,7 +97,7 @@ Tune with `HARPY_RATE_LIMIT` (default `2`) and `HARPY_RATE_LIMIT_WINDOW` (defaul
 - UTXO set keyed by `OutPoint`; `validate_tx` + mempool conflict check ([STATE_MODEL.md](./STATE_MODEL.md)).
 - `apply_block` removes spent UTXOs atomically; per-block undo log for future reorgs.
 
-**Residual risk:** Single-node tutorial has no network conflict resolution until P2P ([MIC-54](https://linear.app/mbx2/issue/MIC-54)+).
+**Residual risk:** Competing blocks from P2P require confirmation depth — see [CONFIRMATION_DEPTH.md](./CONFIRMATION_DEPTH.md). Mempool conflicts return HTTP 409 on single-node writes.
 
 ### 3. Selfish mining / fork choice games (consensus)
 
@@ -134,17 +134,25 @@ Tune with `HARPY_RATE_LIMIT` (default `2`) and `HARPY_RATE_LIMIT_WINDOW` (defaul
 
 **Attack:** Many fake node identities to eclipse or partition honest peers.
 
-**Impact:** N/A without P2P today.
+**Mitigations (in repo):**
 
-**Documented:** [SYBIL_RESISTANCE.md](./SYBIL_RESISTANCE.md) ([MIC-92](https://linear.app/mbx2/issue/MIC-92)). **Deferred:** [MIC-68](https://linear.app/mbx2/issue/MIC-68), [MIC-87](https://linear.app/mbx2/issue/MIC-87).
+- PoW makes block forgery expensive ([SYBIL_RESISTANCE.md](./SYBIL_RESISTANCE.md)).
+- Peer slot limits, /16 subnet bucketing, anchor peers, misbehavior bans ([P2P.md](./P2P.md)).
+- Eclipse risk surfaced in `GET /health` (`p2p.eclipse_risk`).
+
+**Residual risk:** Tutorial-scale Sybil resistance is not mainnet-grade. **Deferred:** [MIC-68](https://linear.app/mbx2/issue/MIC-68), production peer diversity requirements.
 
 ### 8. Eclipse / BGP partition (network)
 
-**Attack:** Isolate a node's view to feed a weaker fork.
+**Attack:** Isolate a node's peer set or cut routing paths to feed a weaker fork.
 
-**Impact:** N/A on single-node HTTP tutorial.
+**Mitigations (in repo):**
 
-**Deferred:** [MIC-68](https://linear.app/mbx2/issue/MIC-68), [MIC-87](https://linear.app/mbx2/issue/MIC-87).
+- `EclipseGuard` subnet caps and anchor peers; `Eclipse.assess` monitoring.
+- Cumulative-work reorg on reconnect when heavier fork arrives.
+- Documented operator guidance: [ROUTING_PARTITION.md](./ROUTING_PARTITION.md).
+
+**Residual risk:** No BGP monitoring or multi-homed routing. **Deferred:** ISP-level defenses, [MIC-87](https://linear.app/mbx2/issue/MIC-87).
 
 ## Production process
 
@@ -167,11 +175,12 @@ Harpy scores each block as **`work = 16^difficulty`**. Fork replacement requires
 | `MIN_TX_FEE` | `1_000` base units | Consider raising for public mempools |
 | `HARPY_DATA_DIR` | `data/chain.json` | Dedicated volume, backups |
 | Exposure | `localhost` only | Firewall; do not expose mining publicly |
-| Confirmations | Depth 1 OK (single node) | See [FINALITY.md](./FINALITY.md) — *k*≈6 for staging |
+| Confirmations | Depth 1 OK (isolated node) | See [FINALITY.md](./FINALITY.md) — *k*≈6 when P2P is enabled |
+| P2P | `HARPY_P2P_DISABLE=1` locally | Diverse `HARPY_P2P_PEERS`; watch `/health` eclipse fields |
 
-## P2P phase sequencing note
+## P2P phase note
 
-Linear may label [MIC-68](https://linear.app/mbx2/issue/MIC-68)/[MIC-60](https://linear.app/mbx2/issue/MIC-60)/[MIC-59](https://linear.app/mbx2/issue/MIC-59) Urgent while [MIC-54](https://linear.app/mbx2/issue/MIC-54) (gossip) is High. **Implementation order:** 54 → 57 → 60 → 59 → 56 → 68 → 72 → 67 → 87 regardless of priority labels.
+Phase 5 P2P (gossip, orphans, reorgs, eclipse countermeasures) is **implemented** — see [P2P.md](./P2P.md). Remaining network hardening ([MIC-68](https://linear.app/mbx2/issue/MIC-68), [MIC-87](https://linear.app/mbx2/issue/MIC-87)) is operational and out-of-band relative to the tutorial codebase.
 
 ## Related documents and issues
 
@@ -180,7 +189,8 @@ Linear may label [MIC-68](https://linear.app/mbx2/issue/MIC-68)/[MIC-60](https:/
 - [SYBIL_RESISTANCE.md](./SYBIL_RESISTANCE.md) — PoW Sybil assumptions ([MIC-92](https://linear.app/mbx2/issue/MIC-92))
 - [INCIDENT_RESPONSE.md](./INCIDENT_RESPONSE.md) — release and rollback ([MIC-34](https://linear.app/mbx2/issue/MIC-34))
 - [POS_CHECKPOINTING.md](./POS_CHECKPOINTING.md) — PoS decision gate ([MIC-88](https://linear.app/mbx2/issue/MIC-88))
-- [DEMO.md](./DEMO.md) — runbook
+- [DEMO.md](./DEMO.md) — HTTP runbook
+- [P2P.md](./P2P.md) — gossip, env vars, multi-node runbook
 - [AGENTS.md](../AGENTS.md) — architecture and commands
 
 ## References

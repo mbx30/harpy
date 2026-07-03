@@ -6,7 +6,7 @@ Guidance for AI agents working in the **harpy** repository.
 
 Harpy is a **Crystal proof-of-work blockchain tutorial**. It is named after [Harpocrates](https://en.wikipedia.org/wiki/Harpocrates), the Greek god of silence (derived from an Egyptian deity symbolizing hope, the newborn sun, and a child).
 
-This is an **educational, single-node** chain — not production blockchain software. It teaches blocks, SHA-256 linking, PoW mining, and HTTP read/write. Networking (P2P, fork choice, reorgs) is explicitly out of scope for the current phase.
+This is an **educational** proof-of-work chain — not production blockchain software. It teaches blocks, SHA-256 linking, PoW mining, UTXO transactions, HTTP read/write, and optional **P2P block gossip with cumulative-work reorgs**. See [docs/P2P.md](docs/P2P.md) for multi-node setup.
 
 **Project tracking:** [Linear — Harpy](https://linear.app/mbx2/project/harpy-16c5704dd57d/overview)
 
@@ -46,6 +46,14 @@ src/
     rate_limit.cr       # Per-IP token bucket on POST /mine and /tx
     server.cr           # Kemal HTTP routes
     cli.cr              # verify-chain, export-chain
+    p2p.cr              # P2P module entry
+    p2p/
+      protocol.cr       # Wire messages and framing
+      gossip.cr         # Network listener, dial, block relay
+      orphan_pool.cr    # Out-of-order block buffer
+      peer_manager.cr   # Peer slots, bans, eclipse guard
+      reputation.cr     # Inv spam scoring
+      eclipse.cr        # /16 diversity and anchor peers
 spec/                   # Tests + fixtures/hash_vectors.json
 ```
 
@@ -96,6 +104,12 @@ Default PoW difficulty: **3** leading zero hex digits (`Harpy::Block::DEFAULT_DI
 | `HARPY_RATE_LIMIT_WINDOW` | `10` | Refill interval in seconds for the token bucket |
 | `HARPY_TRUST_PROXY` | unset | When truthy, trust `X-Forwarded-For` for client identity (set only behind a trusted reverse proxy) |
 | `HARPY_GENESIS_PUBKEY` | tutorial default | Ed25519 pubkey hex for genesis coinbase output |
+| `HARPY_BIND_HOST` | `127.0.0.1` | HTTP bind address (`0.0.0.0` to expose on LAN) |
+| `HARPY_HTTP_PORT` / `PORT` | `3000` | HTTP API port |
+| `HARPY_P2P_DISABLE` | unset | Set to `1` to disable P2P |
+| `HARPY_P2P_PORT` | `9333` | P2P TCP port (listens on all interfaces) |
+| `HARPY_P2P_PEERS` | unset | Comma-separated bootstrap peers (`host` or `host:port`) |
+| `HARPY_ANCHOR_PEERS` | unset | Up to two trusted peers exempt from subnet eviction |
 
 Rate limiting applies to `POST /mine` and `POST /tx`. Client identity uses the first `X-Forwarded-For` hop **only when `HARPY_TRUST_PROXY` is set** (a directly-reachable node must not trust that client-supplied header); otherwise it uses the TCP remote address. Idle buckets are evicted once fully refilled to bound memory. See `docs/DEMO.md` for curl examples and `docs/THREAT_MODEL.md` for deployment guidance.
 
@@ -136,10 +150,9 @@ Link threat context: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md). Harpy remains
 
 1. **Done (tutorial + hardening):** blocks, SHA-256, PoW, HTTP API, chain validation, cumulative-work fork choice, rate limits, write auth, request size caps
 2. **Done (Phase 4):** UTXO state model, signed transactions (Ed25519), mempool, coinbase/fees, coinbase maturity, difficulty retargeting — see [docs/STATE_MODEL.md](docs/STATE_MODEL.md)
-3. P2P networking — gossip, orphan pool, fork choice, reorgs
-4. Persistent storage — atomic writes, embedded KV (RocksDB/LMDB equivalent)
-5. Adjustable difficulty — retarget from observed block times
-6. Optional: minimal VM with gas metering; Merkle anchoring API (MIC-81)
+3. **Done (Phase 5):** P2P gossip, orphan pool, peer limits, eclipse countermeasures, UTXO-consistent reorgs — see [docs/P2P.md](docs/P2P.md)
+4. **Done (storage):** atomic file writes, checksum envelope, backend interface — see [docs/STORAGE_BACKENDS.md](docs/STORAGE_BACKENDS.md)
+5. Optional: embedded KV backend; minimal VM with gas metering; Merkle anchoring API (MIC-81)
 
 ## Conventions
 

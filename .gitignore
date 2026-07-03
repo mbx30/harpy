@@ -11,6 +11,7 @@
 !/docs/POS_CHECKPOINTING.md
 !/docs/INCIDENT_RESPONSE.md
 !/docs/ROUTING_PARTITION.md
+!/docs/P2P.md
 /lib/
 /bin/
 /.shards/
