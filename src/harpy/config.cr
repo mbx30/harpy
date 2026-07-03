@@ -14,6 +14,9 @@ module Harpy
     DEFAULT_RATE_LIMIT_MAX      =  2
     DEFAULT_RATE_LIMIT_WINDOW_S = 10
 
+    DEFAULT_P2P_PORT            = 9333
+    MAX_P2P_MESSAGE_BYTES       = 512 * 1024
+
     # Bind to loopback by default; require an explicit opt-in to expose on the LAN/public interfaces.
     DEFAULT_BIND_HOST = "127.0.0.1"
 
@@ -86,6 +89,37 @@ module Harpy
       end
 
       DEFAULT_RATE_LIMIT_WINDOW_S
+    end
+
+    def p2p_enabled? : Bool
+      ENV["HARPY_P2P_DISABLE"]? != "1"
+    end
+
+    def p2p_port : Int32
+      if value = ENV["HARPY_P2P_PORT"]?
+        parsed = value.to_i
+        return parsed if parsed > 0
+      end
+
+      DEFAULT_P2P_PORT
+    end
+
+    def p2p_peers : Array(String)
+      raw = ENV["HARPY_P2P_PEERS"]?
+      return [] of String unless raw
+
+      raw.split(',').map(&.strip).reject(&.empty?)
+    end
+
+    def anchor_peers : Array(String)
+      raw = ENV["HARPY_ANCHOR_PEERS"]?
+      return [] of String unless raw
+
+      raw.split(',').map(&.strip).reject(&.empty?)
+    end
+
+    def max_p2p_message_bytes : Int32
+      MAX_P2P_MESSAGE_BYTES
     end
 
     def write_authorized?(request : HTTP::Request, key : String? = api_key) : Bool

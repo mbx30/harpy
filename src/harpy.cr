@@ -17,6 +17,7 @@ require "./harpy/miner"
 require "./harpy/chain"
 require "./harpy/storage"
 require "./harpy/server"
+require "./harpy/p2p"
 require "./harpy/cli"
 
 exit Harpy::CLI.run(ARGV)

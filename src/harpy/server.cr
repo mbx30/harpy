@@ -2,6 +2,7 @@ require "kemal"
 require "log"
 require "./config"
 require "./rate_limit"
+require "./p2p"
 
 module Harpy
   module Server
@@ -12,6 +13,8 @@ module Harpy
     @@chain : Chain? = nil
     @@storage_path = Config.storage_path
     @@api_key : String? = Config.api_key
+    @@p2p : P2p::Network? = nil
+    @@chain_mutex = Mutex.new
 
     def chain : Chain
       @@chain ||= Storage.load_or_genesis(@@storage_path)
@@ -27,9 +30,17 @@ module Harpy
       storage_path : String = Config.storage_path,
       api_key : String? = Config.api_key,
     )
+      @@p2p.try &.stop
+      @@p2p = nil
       @@chain = nil
       @@storage_path = storage_path
       @@api_key = api_key
+    end
+
+    def with_chain(&)
+      @@chain_mutex.synchronize do
+        yield chain
+      end
     end
 
     def configure_kemal!(rate_limiter : RateLimiter = RateLimiter.from_env)
@@ -52,10 +63,26 @@ module Harpy
       end
 
       get "/health" do
-        {
-          valid:         chain.valid?,
-          last_saved_at: last_saved_at.try(&.to_s),
-        }.to_json
+        with_chain do |active|
+          p2p_status = if network = @@p2p
+                         eclipse = network.peer_manager.eclipse_status
+                         {
+                           enabled:       true,
+                           peers:         network.peer_manager.peers.size,
+                           orphans:       network.orphan_pool.size,
+                           eclipse_risk:  eclipse.at_risk,
+                           peer_subnets:  eclipse.distinct_subnets,
+                         }
+                       else
+                         {enabled: false}
+                       end
+
+          {
+            valid:         active.valid?,
+            last_saved_at: last_saved_at.try(&.to_s),
+            p2p:           p2p_status,
+          }.to_json
+        end
       end
 
       get "/validate" do
@@ -134,6 +161,7 @@ module Harpy
 
         chain.mempool.remove_txids(selected.map(&.txid))
         Storage.save(chain, @@storage_path)
+        @@p2p.try &.broadcast_block(new_block)
         Log.info { "block_accepted index=#{new_block.index} hash=#{new_block.hash} height=#{chain.height}" }
         new_block.to_json
       end
@@ -147,6 +175,12 @@ module Harpy
       reset!(storage_path, api_key)
       configure_kemal!(rate_limiter)
       register_routes!
+
+      if Config.p2p_enabled?
+        @@p2p = P2p::Network.new(chain, storage_path, Config.p2p_port, @@chain_mutex)
+        @@p2p.not_nil!.start
+      end
+
       Kemal.run
     end
   end
