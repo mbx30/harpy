@@ -2,6 +2,9 @@ require "digest/sha256"
 require "json"
 
 module Harpy
+  # Union type for block transaction list entries.
+  alias BlockTx = Transaction | CoinbaseTx
+
   struct Block
     include JSON::Serializable
 
@@ -9,7 +12,8 @@ module Harpy
 
     getter index : Int32
     getter timestamp : String
-    getter data : String
+    getter transactions : Array(BlockTx)
+    getter merkle_root : String
     getter hash : String
     getter prev_hash : String
     getter difficulty : Int32
@@ -18,32 +22,26 @@ module Harpy
     def initialize(
       @index : Int32,
       @timestamp : String,
-      @data : String,
+      @transactions : Array(BlockTx),
       @prev_hash : String,
       @difficulty : Int32 = DEFAULT_DIFFICULTY,
       @nonce : String = "",
       @hash : String = "",
+      @merkle_root : String = "",
     )
+      @merkle_root = @merkle_root.empty? ? compute_merkle_root : @merkle_root
     end
 
-    # Canonical, injective preimage for the block hash. Every variable-length
-    # field is length-prefixed (its UTF-8 byte count), so no field value — in
-    # particular `data`, which is attacker-controlled and may contain arbitrary
-    # bytes including newlines — can be crafted to reproduce the field layout of
-    # a different block. The previous newline-joined format was ambiguous: a
-    # `data` string containing newlines could forge a preimage identical to a
-    # block with different timestamp/prev_hash/nonce, so the hash did not
-    # uniquely commit to the structured contents.
-    #
-    # `difficulty` is intentionally excluded — it is a PoW validation threshold,
-    # not part of block identity (see hash_vectors_spec). The `harpy-block-v2`
-    # domain tag marks this format; the pre-v2 (v1) format is not accepted.
+    def compute_merkle_root : String
+      Merkle.root(@transactions.map(&.txid))
+    end
+
     def computed_hash : String
       io = IO::Memory.new
       io << "harpy-block-v2\n"
       io << "index:" << @index << '\n'
       append_hash_field(io, "timestamp", @timestamp)
-      append_hash_field(io, "data", @data)
+      append_hash_field(io, "merkle_root", @merkle_root)
       append_hash_field(io, "prev_hash", @prev_hash)
       append_hash_field(io, "nonce", @nonce)
 
@@ -55,20 +53,11 @@ module Harpy
     end
 
     def pow_valid? : Bool
-      # A negative difficulty is nonsensical and would make `"0" * @difficulty`
-      # raise (ArgumentError) mid-validation — a crafted chain file could crash
-      # the loader. Reject it as invalid PoW instead. Difficulty 0 stays valid:
-      # `"0" * 0 == ""` and every hash trivially satisfies it (lowest work tier).
       return false if @difficulty < 0
 
       @hash.starts_with?("0" * @difficulty)
     end
 
-    # Expected hash trials for `difficulty` leading hex zeroes (16^difficulty),
-    # saturating at UInt64::MAX. A raw `1_u64 << (4 * @difficulty)` wraps to 0
-    # once the shift reaches 64 bits (difficulty ≥ 16), which would make a
-    # maximally-hard block count as *zero* work and invert cumulative-work fork
-    # choice. Saturating keeps work monotonically non-decreasing in difficulty.
     def work : UInt64
       return 1_u64 if @difficulty <= 0
 
@@ -82,20 +71,23 @@ module Harpy
       @hash == computed_hash
     end
 
-    # Re-enforces the HTTP-layer cap (Config.max_block_data_bytes) so a block
-    # loaded from storage, gossip, or a fork-choice replacement can't smuggle
-    # an oversize payload past validation.
-    def data_within_limit? : Bool
-      @data.bytesize <= Config.max_block_data_bytes
+    def transactions_within_limit? : Bool
+      user_count = @transactions.size > 0 ? @transactions.size - 1 : 0
+      return false if user_count > Economics::MAX_TXS_PER_BLOCK
+
+      serialized = @transactions.to_json
+      serialized.bytesize <= Config.max_block_transactions_bytes
     end
 
-    def valid_against?(previous : Block) : Bool
+    def valid_against?(previous : Block, utxo_set : UtxoSet) : Bool
       return false unless @index == previous.index + 1
       return false unless @prev_hash == previous.hash
       return false unless timestamp_not_before?(previous)
       return false unless hash_matches?
       return false unless pow_valid?
-      return false unless data_within_limit?
+      return false unless transactions_within_limit?
+      return false unless @transactions.first?.try &.is_a?(CoinbaseTx)
+      return false unless State.validate_block_transactions(self, utxo_set.dup_set)
 
       true
     end
@@ -113,11 +105,40 @@ module Harpy
     end
 
     def self.genesis(
-      data : String = "Genesis block's data!",
+      miner_pubkey : String = Economics.genesis_pubkey,
       timestamp : String = Time.utc.to_s,
       difficulty : Int32 = DEFAULT_DIFFICULTY,
     ) : Block
-      new(0, timestamp, data, "", difficulty)
+      coinbase = CoinbaseTx.new(
+        outputs: [TxOutput.new(Economics::BLOCK_REWARD, miner_pubkey)],
+        height: 0_u32,
+      )
+      new(0, timestamp, [coinbase] of BlockTx, "", difficulty)
+    end
+
+    # Custom JSON for polymorphic transaction array.
+    def self.from_json(json : JSON::Any) : Block
+      obj = json.as_h
+      txs = obj["transactions"].as_a.map { |entry| parse_block_tx(entry) }
+      new(
+        obj["index"].as_i.to_i32,
+        obj["timestamp"].as_s,
+        txs,
+        obj["prev_hash"].as_s,
+        obj["difficulty"]?.try(&.as_i.to_i32) || DEFAULT_DIFFICULTY,
+        obj["nonce"]?.try(&.as_s) || "",
+        obj["hash"]?.try(&.as_s) || "",
+        obj["merkle_root"]?.try(&.as_s) || "",
+      )
+    end
+
+    def self.parse_block_tx(json : JSON::Any) : BlockTx
+      obj = json.as_h
+      if obj["height"]?
+        CoinbaseTx.from_json(json)
+      else
+        Transaction.from_json(json)
+      end
     end
   end
 end

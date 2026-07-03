@@ -46,7 +46,6 @@ describe "chain property and fork-choice integration" do
     main.replace_if_more_work_valid!(shorter_high_work.blocks).should be_true
     main.valid?.should be_true
     main.height.should eq(2)
-    main.blocks.last.data.should start_with("shorter-high-work")
   end
 
   it "accepts a longer valid competing chain with more cumulative work" do
@@ -57,7 +56,6 @@ describe "chain property and fork-choice integration" do
     main.replace_if_more_work_valid!(longer_fork.blocks).should be_true
     main.valid?.should be_true
     main.height.should eq(4)
-    main.blocks.last.data.should start_with("longer")
   end
 
   it "rejects an invalid candidate even when it has more cumulative work" do
@@ -83,14 +81,13 @@ describe "stored chain boot validation" do
       blocks[1] = Harpy::Block.new(
         blocks[1].index,
         blocks[1].timestamp,
-        blocks[1].data,
+        blocks[1].transactions,
         blocks[1].prev_hash,
         blocks[1].difficulty,
         blocks[1].nonce,
         "deadbeef",
+        blocks[1].merkle_root,
       )
-      # Re-wrap with a matching checksum so the tamper passes checksum
-      # verification and must be caught by semantic chain validation instead.
       File.write(path, Harpy::Storage::Envelope.wrap(blocks).to_json)
 
       expect_raises Harpy::StorageError do

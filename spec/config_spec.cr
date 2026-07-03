@@ -19,10 +19,10 @@ describe Harpy::Config do
     end
   end
 
-  it "exposes request and block data size limits" do
+  it "exposes request and block transaction size limits" do
     Harpy::Config.max_request_body_bytes.should eq(64 * 1024)
-    Harpy::Config.max_block_data_bytes.should eq(32 * 1024)
-    Harpy::Config.max_block_data_bytes.should be < Harpy::Config.max_request_body_bytes
+    Harpy::Config.max_block_transactions_bytes.should eq(32 * 1024)
+    Harpy::Config.max_block_transactions_bytes.should be < Harpy::Config.max_request_body_bytes
   end
 
   it "uses the default storage path when HARPY_DATA_DIR is unset" do

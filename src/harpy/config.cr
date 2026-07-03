@@ -8,8 +8,8 @@ module Harpy
     # Maximum JSON request body for POST /new-block (64 KiB).
     MAX_REQUEST_BODY_BYTES = 64 * 1024
 
-    # Maximum bytes stored in block.data (32 KiB). Must be ≤ MAX_REQUEST_BODY_BYTES.
-    MAX_BLOCK_DATA_BYTES = 32 * 1024
+    # Maximum serialized block transactions JSON (32 KiB).
+    MAX_BLOCK_TRANSACTIONS_BYTES = 32 * 1024
 
     DEFAULT_RATE_LIMIT_MAX      =  2
     DEFAULT_RATE_LIMIT_WINDOW_S = 10
@@ -21,8 +21,8 @@ module Harpy
       MAX_REQUEST_BODY_BYTES
     end
 
-    def max_block_data_bytes : Int32
-      MAX_BLOCK_DATA_BYTES
+    def max_block_transactions_bytes : Int32
+      MAX_BLOCK_TRANSACTIONS_BYTES
     end
 
     def genesis_difficulty : Int32
@@ -109,7 +109,7 @@ module Harpy
     # byte-by-byte against an exposed node. `Crypto::Subtle.constant_time_compare`
     # is length-safe and does not early-exit.
     private def secure_equal?(a : String, b : String) : Bool
-      Crypto::Subtle.constant_time_compare(a, b)
+      ::Crypto::Subtle.constant_time_compare(a, b)
     end
   end
 end

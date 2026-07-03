@@ -1,29 +1,11 @@
 [
   {
-    "description": "minimal block fields",
+    "description": "genesis coinbase block (harpy-block-v2, merkle_root era)",
     "index": 0,
-    "timestamp": "2026-01-01",
-    "data": "test",
+    "timestamp": "2026-07-03 17:30:00 UTC",
+    "merkle_root": "9feb3bdbb10c1b4fe4331780b943a3dae454e51fd74bdf47ea37140c5f4cecc7",
     "prev_hash": "",
     "nonce": "0",
-    "expected_hash": "08fb313db12857e8375b29cdb3455893021723b82546a52b2a7a11ea4b8a5e6c"
-  },
-  {
-    "description": "default genesis data string",
-    "index": 0,
-    "timestamp": "2026-01-01",
-    "data": "Genesis block's data!",
-    "prev_hash": "",
-    "nonce": "0",
-    "expected_hash": "ec615e721f13c3dd9e234c1786001cdff170406108b41fe63687584b39d248e2"
-  },
-  {
-    "description": "hex nonce on chained index",
-    "index": 1,
-    "timestamp": "2026-01-02",
-    "data": "block two",
-    "prev_hash": "",
-    "nonce": "abc",
-    "expected_hash": "f09f8eea02ea811bd884e707782e899bec3c2a54911b0d908d0e78fa8069e222"
+    "expected_hash": "3f9e1dfc2a965ba7387023421bf430e15df484b57030fabd02bdec1a06ad3911"
   }
 ]

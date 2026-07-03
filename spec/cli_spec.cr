@@ -20,10 +20,11 @@ describe Harpy::CLI do
     it "exits 1 when the chain file is corrupted" do
       path = File.tempname
       io = IO::Memory.new
-      Harpy::Storage.save(Harpy::SpecHelpers.build_chain(2), path)
+      chain = Harpy::SpecHelpers.build_chain(2)
+      Harpy::Storage.save(chain, path)
 
       begin
-        File.write(path, File.read(path).sub("block 1", "hacked!"))
+        File.write(path, File.read(path).sub(chain.blocks.first.hash[0..7], "deadbeef"))
 
         code = Harpy::CLI.run(["verify-chain", "--path", path], io)
         code.should eq(1)

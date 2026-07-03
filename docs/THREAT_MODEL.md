@@ -104,7 +104,7 @@ Tune defaults with `HARPY_RATE_LIMIT` (bucket capacity, default `2`) and `HARPY_
 
 - Cumulative work scoring (`16^difficulty` per block) instead of block count alone ([MIC-35](https://linear.app/mbx2/issue/MIC-35)).
 
-**Residual risk:** No network propagation rules, no confirmation-depth policy. **Deferred:** [MIC-69](https://linear.app/mbx2/issue/MIC-69), [MIC-71](https://linear.app/mbx2/issue/MIC-71).
+**Residual risk:** No network propagation rules until P2P. **Documented:** [SELFISH_MINING.md](./SELFISH_MINING.md) (thresholds vs γ), [CONFIRMATION_DEPTH.md](./CONFIRMATION_DEPTH.md) (Gervais MDP *k*).
 
 ### 4. Timestamp manipulation
 

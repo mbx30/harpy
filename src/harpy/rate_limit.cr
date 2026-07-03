@@ -78,7 +78,7 @@ module Harpy
     def call(context : HTTP::Server::Context)
       request = context.request
 
-      if request.method == "POST" && request.path == "/new-block"
+      if request.method == "POST" && (request.path == "/mine" || request.path == "/tx")
         unless @limiter.allow?(client_key(request))
           context.response.status_code = 429
           context.response.content_type = "application/json"

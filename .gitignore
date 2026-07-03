@@ -1,9 +1,11 @@
 # Crystal / Shards
-/docs/
+/docs/*
 !/docs/DEMO.md
 !/docs/THREAT_MODEL.md
 !/docs/STATE_MODEL.md
 !/docs/STORAGE_BACKENDS.md
+!/docs/SELFISH_MINING.md
+!/docs/CONFIRMATION_DEPTH.md
 /lib/
 /bin/
 /.shards/

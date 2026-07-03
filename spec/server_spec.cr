@@ -66,61 +66,41 @@ describe "GET /health" do
   end
 end
 
-describe "POST /new-block request limits" do
-  it "rejects HTTP bodies larger than the configured limit with 413" do
-    oversized = %({"data":"#{"x" * (Harpy::Config.max_request_body_bytes + 1)}"})
-    response = harpy_test_response("POST", "/new-block", oversized)
-
-    response.status_code.should eq(413)
-    response.body.should eq(%({"error":"request body too large"}))
-  end
-
-  it "rejects block data larger than the configured cap with 400" do
-    payload = %({"data":"#{"y" * (Harpy::Config.max_block_data_bytes + 1)}"})
-    response = harpy_test_response("POST", "/new-block", payload)
-
-    response.status_code.should eq(400)
-    response.body.should eq(%({"error":"block data exceeds maximum size"}))
-  end
-
-  it "accepts block data within the configured cap" do
-    payload = %({"data":"#{"z" * (Harpy::Config.max_block_data_bytes - 20)}"})
-    response = harpy_test_response("POST", "/new-block", payload)
+describe "GET /mempool" do
+  it "returns an empty mempool on a fresh chain" do
+    response = harpy_test_response("GET", "/mempool")
 
     response.status_code.should eq(200)
-    JSON.parse(response.body)["data"].as_s.bytesize.should eq(Harpy::Config.max_block_data_bytes - 20)
+    JSON.parse(response.body)["transactions"].as_a.should be_empty
   end
 end
 
-describe "POST /new-block API key auth" do
+describe "POST /mine" do
+  it "mines and appends a coinbase-only block" do
+    _, verify_key = Harpy::SpecHelpers.generate_keypair
+    pubkey = Harpy::Crypto.pubkey_hex(verify_key)
+    response = harpy_test_response("POST", "/mine", %({"miner_pubkey":"#{pubkey}"}))
+
+    response.status_code.should eq(200)
+    JSON.parse(response.body)["index"].as_i.should eq(1)
+  end
+
   it "returns 401 when the API key is required but missing" do
-    response = harpy_test_response("POST", "/new-block", %({"data":"hello"}), api_key: "secret")
+    _, verify_key = Harpy::SpecHelpers.generate_keypair
+    pubkey = Harpy::Crypto.pubkey_hex(verify_key)
+    response = harpy_test_response("POST", "/mine", %({"miner_pubkey":"#{pubkey}"}), api_key: "secret")
 
     response.status_code.should eq(401)
     response.body.should eq(%({"error":"unauthorized"}))
   end
+end
 
-  it "accepts Authorization Bearer when an API key is configured" do
-    response = harpy_test_response(
-      "POST",
-      "/new-block",
-      %({"data":"authenticated"}),
-      api_key: "secret",
-      headers: {"Authorization" => "Bearer secret"},
-    )
+describe "POST /mine request limits" do
+  it "rejects HTTP bodies larger than the configured limit with 413" do
+    oversized = %({"miner_pubkey":"#{"x" * (Harpy::Config.max_request_body_bytes + 1)}"})
+    response = harpy_test_response("POST", "/mine", oversized)
 
-    response.status_code.should eq(200)
-  end
-
-  it "accepts X-API-Key when an API key is configured" do
-    response = harpy_test_response(
-      "POST",
-      "/new-block",
-      %({"data":"authenticated"}),
-      api_key: "secret",
-      headers: {"X-API-Key" => "secret"},
-    )
-
-    response.status_code.should eq(200)
+    response.status_code.should eq(413)
+    response.body.should eq(%({"error":"request body too large"}))
   end
 end

@@ -26,13 +26,26 @@ src/
   harpy.cr              # Entry point → starts Kemal server
   harpy/
     types.cr            # Harpy::VERSION
+    economics.cr        # BLOCK_REWARD, fees, maturity, retarget constants
+    crypto.cr           # Ed25519 sign/verify (crypto-agile sig_algorithm)
+    outpoint.cr         # UTXO outpoint (txid, vout)
+    tx_output.cr        # TxOutput (amount, pubkey)
+    tx_input.cr         # TxInput (prev_out, signature, sig_algorithm)
+    transaction.cr      # Signed transaction + canonical digest
+    coinbase_tx.cr      # Coinbase mint transaction
+    merkle.cr           # Merkle root over txids
+    utxo.cr             # UTXO set + undo entries
+    state.cr            # validate_tx, apply_block, coinbase rules
+    mempool.cr          # Pending transaction pool
+    difficulty.cr       # PoW difficulty retargeting
     block.cr            # Block struct, SHA-256 hashing, validation
-    chain.cr            # In-memory chain, append, fork replacement
+    chain.cr            # In-memory chain, UTXO replay, fork replacement
     miner.cr            # Proof-of-work mining loop
     storage.cr          # JSON load/save, genesis bootstrap
     config.cr           # Env config, size limits, write auth
-    rate_limit.cr       # Per-IP token bucket on POST /new-block
+    rate_limit.cr       # Per-IP token bucket on POST /mine and /tx
     server.cr           # Kemal HTTP routes
+    cli.cr              # verify-chain, export-chain
 spec/                   # Tests + fixtures/hash_vectors.json
 ```
 
@@ -41,21 +54,36 @@ spec/                   # Tests + fixtures/hash_vectors.json
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/` | Return full blockchain as JSON |
+| `GET` | `/health` | Chain validity and last save timestamp |
 | `GET` | `/validate` | Chain validity, height, cumulative work, tip hash |
 | `GET` | `/block/:index` | Single block by index |
-| `POST` | `/new-block` | Body: `{ "data": "..." }` — mines and appends a block |
+| `GET` | `/mempool` | Pending transactions |
+| `POST` | `/tx` | Body: signed `Transaction` JSON — validates and admits to mempool |
+| `POST` | `/mine` | Body: `{ "miner_pubkey": "..." }` — mines coinbase + mempool txs |
 
-`POST /new-block` responses (when validation fails):
+`POST /tx` responses:
 
 | Status | Condition |
 |--------|-----------|
-| 400 | Missing/invalid/empty `data`, or `data` exceeds 32 KiB |
+| 200 | Transaction accepted; returns `{ "txid": "..." }` |
+| 400 | Invalid transaction structure, signature, balance, or fee |
 | 401 | `HARPY_API_KEY` set but request lacks valid credentials |
+| 409 | Double-spend conflict with mempool |
 | 413 | JSON body exceeds 64 KiB (Kemal body limit) |
-| 422 | Mined block rejected by chain validation |
-| 429 | Per-IP rate limit exceeded on `POST /new-block` |
+| 429 | Per-IP rate limit exceeded |
 
-Default PoW difficulty: **3** leading zero hex digits (`Harpy::Block::DEFAULT_DIFFICULTY`). Override at genesis with `HARPY_DIFFICULTY` (see `docs/DEMO.md`).
+`POST /mine` responses:
+
+| Status | Condition |
+|--------|-----------|
+| 200 | Block mined and appended |
+| 400 | Missing/invalid `miner_pubkey` |
+| 401 | `HARPY_API_KEY` set but request lacks valid credentials |
+| 413 | JSON body exceeds 64 KiB |
+| 422 | Mined block rejected by chain validation |
+| 429 | Per-IP rate limit exceeded |
+
+Default PoW difficulty: **3** leading zero hex digits (`Harpy::Block::DEFAULT_DIFFICULTY`). Override at genesis with `HARPY_DIFFICULTY` (see `docs/DEMO.md`). Difficulty retargets every 10 blocks toward a 60-second target interval.
 
 ### Environment variables
 
@@ -67,23 +95,37 @@ Default PoW difficulty: **3** leading zero hex digits (`Harpy::Block::DEFAULT_DI
 | `HARPY_RATE_LIMIT` | `2` | Max mining requests per client per window |
 | `HARPY_RATE_LIMIT_WINDOW` | `10` | Refill interval in seconds for the token bucket |
 | `HARPY_TRUST_PROXY` | unset | When truthy, trust `X-Forwarded-For` for client identity (set only behind a trusted reverse proxy) |
+| `HARPY_GENESIS_PUBKEY` | tutorial default | Ed25519 pubkey hex for genesis coinbase output |
 
-Rate limiting applies only to `POST /new-block`. Client identity uses the first `X-Forwarded-For` hop **only when `HARPY_TRUST_PROXY` is set** (a directly-reachable node must not trust that client-supplied header); otherwise it uses the TCP remote address. Idle buckets are evicted once fully refilled to bound memory. See `docs/DEMO.md` for curl examples and `docs/THREAT_MODEL.md` for deployment guidance.
+Rate limiting applies to `POST /mine` and `POST /tx`. Client identity uses the first `X-Forwarded-For` hop **only when `HARPY_TRUST_PROXY` is set** (a directly-reachable node must not trust that client-supplied header); otherwise it uses the TCP remote address. Idle buckets are evicted once fully refilled to bound memory. See `docs/DEMO.md` for curl examples and `docs/THREAT_MODEL.md` for deployment guidance.
 
 ### Hash serialization
 
-`Block#computed_hash` SHA-256 digests a canonical, **length-prefixed** encoding (domain tag `harpy-block-v2`) of `index`, `timestamp`, `data`, `prev_hash`, and `nonce` — each variable field prefixed by its byte length so no field value can spoof another's boundary. **`difficulty` is not included.** Pinned vectors: `spec/fixtures/hash_vectors.json`.
+`Block#computed_hash` SHA-256 digests a canonical, **length-prefixed** encoding (domain tag `harpy-block-v2`) of `index`, `timestamp`, `merkle_root`, `prev_hash`, and `nonce` — each variable field prefixed by its byte length. **`difficulty` is not included.** Transaction bodies are committed via `merkle_root` only. Pinned vectors: `spec/fixtures/hash_vectors.json`.
+
+Transaction `txid` and signing digest: SHA-256 over canonical JSON of `version`, `inputs` (without signatures), `outputs` (keys sorted lexicographically).
 
 ### Validation
 
 Blocks must satisfy linkage, PoW prefix, hash integrity, and **monotonic timestamps** (child ≥ parent).
 
-Fork replacement (`Chain#replace_if_more_work_valid!`) compares **cumulative PoW work** — each block contributes `16^difficulty` (`Block#work`) — not block count alone. Threat model: `docs/THREAT_MODEL.md`.
+Fork replacement (`Chain#replace_if_more_work_valid!`) compares **cumulative PoW work** — each block contributes `16^difficulty` (`Block#work`) — not block count alone. Threat model: `docs/THREAT_MODEL.md`. Selfish-mining thresholds: `docs/SELFISH_MINING.md`. Confirmation depth: `docs/CONFIRMATION_DEPTH.md`.
+
+## AI-assisted development security gates
+
+When using AI coding agents on Harpy, follow these gates (from production-readiness research §4.3):
+
+1. **Spec before code** — requirements and acceptance criteria live in Linear/issues and design docs (`docs/STATE_MODEL.md`, `docs/THREAT_MODEL.md`) *before* implementation. Tests verify correctness; they do not define it retroactively.
+2. **SAST/SCA on AI-generated code** — run static analysis and dependency scanning on agent-produced diffs before merge (Crystal compiler warnings, `crystal tool format --check`, dependency audit).
+3. **Independent review** — the session that generated a change must not be the sole reviewer. A human or adversarial second pass is required for merges touching consensus, crypto, or auth.
+4. **Protected paths** — unreviewed AI output must not land in **authentication** (`config.cr` API key), **cryptography** (signatures, hashing), or **consensus** (fork choice, state transitions, difficulty retargeting) without explicit sign-off.
+
+Link threat context: [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md). Harpy remains educational — these gates teach secure process, not production certification.
 
 ## Roadmap (from project research)
 
 1. **Done (tutorial + hardening):** blocks, SHA-256, PoW, HTTP API, chain validation, cumulative-work fork choice, rate limits, write auth, request size caps
-2. **State model (design gate):** UTXO — see [docs/STATE_MODEL.md](docs/STATE_MODEL.md). Phase 5 blocked until approved.
+2. **Done (Phase 4):** UTXO state model, signed transactions (Ed25519), mempool, coinbase/fees, coinbase maturity, difficulty retargeting — see [docs/STATE_MODEL.md](docs/STATE_MODEL.md)
 3. P2P networking — gossip, orphan pool, fork choice, reorgs
 4. Persistent storage — atomic writes, embedded KV (RocksDB/LMDB equivalent)
 5. Adjustable difficulty — retarget from observed block times
@@ -122,5 +164,5 @@ Cloud VMs run **Linux** (Ubuntu), not Windows — ignore the Windows/`winget`/De
 
 Standard commands (see the `## Commands` table) work as written on Linux:
 
-- Run the server: `crystal run src/harpy.cr` → listens on `http://localhost:3000` (`GET /`, `POST /new-block`).
+- Run the server: `crystal run src/harpy.cr` → listens on `http://localhost:3000` (`GET /`, `POST /tx`, `POST /mine`).
 - Tests: `crystal spec`. Format: `crystal tool format[ --check]`. Build: `shards build` → `bin/harpy`.

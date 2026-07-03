@@ -17,8 +17,6 @@ module Harpy
       @@chain ||= Storage.load_or_genesis(@@storage_path)
     end
 
-    # Reflects the on-disk chain file's mtime, so it's accurate across process
-    # restarts without tracking separate in-memory state.
     def last_saved_at : Time?
       return nil unless File.exists?(@@storage_path)
 
@@ -80,38 +78,56 @@ module Harpy
         block.to_json
       end
 
-      post "/new-block" do |env|
+      get "/mempool" do
+        {transactions: chain.mempool.transactions}.to_json
+      end
+
+      post "/tx" do |env|
+        unless Config.write_authorized?(env.request, @@api_key)
+          halt env, status_code: 401, response: %({"error":"unauthorized"})
+        end
+
+        begin
+          tx = Transaction.from_json(env.params.json.to_json)
+        rescue
+          halt env, status_code: 400, response: %({"error":"invalid transaction json"})
+        end
+
+        result = chain.mempool.add(tx, chain.utxo_set, chain.height.to_u32)
+        case result
+        when Mempool::AddResult::Accepted
+          {txid: tx.txid}.to_json
+        when Mempool::AddResult::Conflict
+          halt env, status_code: 409, response: %({"error":"double-spend conflict"})
+        else
+          halt env, status_code: 400, response: %({"error":"invalid transaction"})
+        end
+      end
+
+      post "/mine" do |env|
         unless Config.write_authorized?(env.request, @@api_key)
           halt env, status_code: 401, response: %({"error":"unauthorized"})
         end
 
         body = env.params.json
-
-        unless data_field = body["data"]?
-          halt env, status_code: 400, response: %({"error":"missing data field"})
+        unless pubkey_field = body["miner_pubkey"]?
+          halt env, status_code: 400, response: %({"error":"missing miner_pubkey field"})
         end
 
-        unless data_field.is_a?(String)
-          halt env, status_code: 400, response: %({"error":"data must be a string"})
+        unless pubkey_field.is_a?(String) && pubkey_field.size == 64
+          halt env, status_code: 400, response: %({"error":"miner_pubkey must be 64-char hex Ed25519 public key"})
         end
 
-        data = data_field
-
-        if data.empty?
-          halt env, status_code: 400, response: %({"error":"data cannot be empty"})
-        end
-
-        if data.bytesize > Config.max_block_data_bytes
-          halt env, status_code: 400, response: %({"error":"block data exceeds maximum size"})
-        end
-
-        new_block = Miner.mine_next(chain.tip, data, verbose: true)
+        miner_pubkey = pubkey_field
+        selected = chain.mempool.select_for_block
+        new_block = Miner.mine_from_mempool(chain, miner_pubkey, verbose: true)
 
         unless chain.append!(new_block)
           Log.warn { "block_rejected index=#{new_block.index} prev_hash=#{new_block.prev_hash}" }
           halt env, status_code: 422, response: %({"error":"block rejected by chain validation"})
         end
 
+        chain.mempool.remove_txids(selected.map(&.txid))
         Storage.save(chain, @@storage_path)
         Log.info { "block_accepted index=#{new_block.index} hash=#{new_block.hash} height=#{chain.height}" }
         new_block.to_json

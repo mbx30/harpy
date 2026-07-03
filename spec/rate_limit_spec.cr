@@ -20,10 +20,12 @@ def rate_limited_harpy_response(
   Harpy::Server.configure_kemal!(rate_limiter)
   Harpy::Server.register_routes!
 
-  request = HTTP::Request.new("POST", "/new-block")
+  request = HTTP::Request.new("POST", "/mine")
   request.headers["Content-Type"] = "application/json"
   request.headers["X-Forwarded-For"] = client_ip
-  body = %({"data":"rate-limit-test"})
+  _, verify_key = Harpy::SpecHelpers.generate_keypair
+  pubkey = Harpy::Crypto.pubkey_hex(verify_key)
+  body = %({"miner_pubkey":"#{pubkey}"})
   request.body = IO::Memory.new(body.to_slice)
   request.headers["Content-Length"] = body.bytesize.to_s
 
@@ -63,7 +65,7 @@ describe Harpy::RateLimiter do
   end
 end
 
-describe "POST /new-block rate limiting" do
+describe "POST /mine rate limiting" do
   it "returns 429 when the per-IP token bucket is exhausted" do
     limiter = Harpy::RateLimiter.new(max_tokens: 1, refill_seconds: 60)
 
