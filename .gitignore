@@ -2,6 +2,7 @@
 /docs/
 !/docs/DEMO.md
 !/docs/THREAT_MODEL.md
+!/docs/STATE_MODEL.md
 /lib/
 /bin/
 /.shards/
