@@ -25,27 +25,15 @@ describe "chain property and fork-choice integration" do
     main.height.should eq(3)
   end
 
-  it "rejects a longer fork with lower cumulative work" do
-    main = Harpy::SpecHelpers.build_chain(3, difficulty: 2)
+  it "rejects a shorter fork with less cumulative work" do
+    main = Harpy::SpecHelpers.build_chain(5, difficulty: 2)
     genesis = main.blocks.first
-    longer_low_work = Harpy::SpecHelpers.extend_fork_from(genesis, 6, "longer-low-work", difficulty: 0)
+    shorter_less_work = Harpy::SpecHelpers.extend_fork_from(genesis, 3, "shorter-less-work")
 
-    longer_low_work.height.should be > main.height
-    longer_low_work.cumulative_work.should be < main.cumulative_work
-    main.replace_if_more_work_valid!(longer_low_work.blocks).should be_false
-    main.height.should eq(3)
-  end
-
-  it "accepts a shorter fork with higher cumulative work" do
-    main = Harpy::SpecHelpers.build_chain(5, difficulty: 0)
-    genesis = main.blocks.first
-    shorter_high_work = Harpy::SpecHelpers.extend_fork_from(genesis, 2, "shorter-high-work", difficulty: 2)
-
-    shorter_high_work.height.should be < main.height
-    shorter_high_work.cumulative_work.should be > main.cumulative_work
-    main.replace_if_more_work_valid!(shorter_high_work.blocks).should be_true
-    main.valid?.should be_true
-    main.height.should eq(2)
+    shorter_less_work.height.should be < main.height
+    shorter_less_work.cumulative_work.should be < main.cumulative_work
+    main.replace_if_more_work_valid!(shorter_less_work.blocks).should be_false
+    main.height.should eq(5)
   end
 
   it "accepts a longer valid competing chain with more cumulative work" do

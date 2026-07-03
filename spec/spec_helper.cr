@@ -89,20 +89,27 @@ module Harpy::SpecHelpers
     genesis : Harpy::Block,
     block_count : Int32,
     label : String = "fork",
-    difficulty : Int32? = nil,
+    seconds_between : Int32 = 1,
     miner_pubkey : String = Harpy::Economics.genesis_pubkey,
   ) : Harpy::Chain
     fork = Harpy::Chain.new([genesis])
-    (1...block_count).each do |_index|
-      block_difficulty = difficulty || fork.tip.difficulty
+    base_time = begin
+      Time.parse(genesis.timestamp, "%Y-%m-%d %H:%M:%S UTC", Time::Location::UTC)
+    rescue Time::Format::Error
+      Time.utc
+    end
+
+    (1...block_count).each do |index|
+      block_difficulty = Harpy::Difficulty.required_for_block(fork.blocks)
       next_height = (fork.tip.index + 1).to_u32
+      timestamp = (base_time + (index * seconds_between).seconds).to_s("%Y-%m-%d %H:%M:%S UTC")
       coinbase = Harpy::CoinbaseTx.new(
         outputs: [Harpy::TxOutput.new(Harpy::Economics::BLOCK_REWARD, miner_pubkey)],
         height: next_height,
       )
       candidate = Harpy::Block.new(
         fork.tip.index + 1,
-        Time.utc.to_s,
+        timestamp,
         [coinbase] of Harpy::BlockTx,
         fork.tip.hash,
         block_difficulty,

@@ -52,7 +52,9 @@ class Harpy::Chain
         return false unless Harpy::State.validate_block_transactions(block, working)
         Harpy::State.apply_block(block, working)
       else
-        return false unless block.valid_against?(@blocks[index - 1], working)
+        ancestors = @blocks[0...index]
+        expected = Harpy::Difficulty.required_for_block(ancestors)
+        return false unless block.valid_against?(@blocks[index - 1], working, expected)
         Harpy::State.apply_block(block, working)
       end
     end
@@ -62,7 +64,9 @@ class Harpy::Chain
 
   def append!(block : Harpy::Block) : Bool
     return false if @blocks.empty?
-    return false unless block.valid_against?(tip, @utxo_set)
+
+    expected = next_difficulty
+    return false unless block.valid_against?(tip, @utxo_set, expected)
 
     undo = Harpy::State.apply_block(block, @utxo_set)
     @undo_log << undo

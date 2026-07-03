@@ -79,9 +79,10 @@ module Harpy
       serialized.bytesize <= Config.max_block_transactions_bytes
     end
 
-    def valid_against?(previous : Block, utxo_set : UtxoSet) : Bool
+    def valid_against?(previous : Block, utxo_set : UtxoSet, expected_difficulty : Int32) : Bool
       return false unless @index == previous.index + 1
       return false unless @prev_hash == previous.hash
+      return false unless @difficulty == expected_difficulty
       return false unless timestamp_not_before?(previous)
       return false unless hash_matches?
       return false unless pow_valid?

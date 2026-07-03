@@ -2,6 +2,10 @@ module Harpy
   module Difficulty
     extend self
 
+    def required_for_block(ancestor_blocks : Array(Block)) : Int32
+      retarget(ancestor_blocks)
+    end
+
     def retarget(blocks : Array(Block), interval : Int32 = Economics::RETARGET_INTERVAL) : Int32
       return blocks.last?.try(&.difficulty) || Block::DEFAULT_DIFFICULTY if blocks.size < 2
 

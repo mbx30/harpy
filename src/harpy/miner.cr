@@ -56,8 +56,13 @@ module Harpy
       miner_pubkey : String,
       verbose : Bool = false,
     ) : Block
-      selected = chain.mempool.select_for_block
       difficulty = chain.next_difficulty
+      selected = chain.mempool.select_for_block(
+        chain.tip,
+        miner_pubkey,
+        chain.utxo_set,
+        difficulty,
+      )
       unmined = build_block_with_fees(chain.tip, selected, miner_pubkey, difficulty, chain.utxo_set)
       mine(unmined, verbose: verbose)
     end

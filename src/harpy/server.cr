@@ -119,7 +119,12 @@ module Harpy
         end
 
         miner_pubkey = pubkey_field
-        selected = chain.mempool.select_for_block
+        selected = chain.mempool.select_for_block(
+          chain.tip,
+          miner_pubkey,
+          chain.utxo_set,
+          chain.next_difficulty,
+        )
         new_block = Miner.mine_from_mempool(chain, miner_pubkey, verbose: true)
 
         unless chain.append!(new_block)

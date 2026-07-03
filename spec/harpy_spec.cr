@@ -38,13 +38,30 @@ describe Harpy::Block do
 
   it "validates linkage and hash integrity against the previous block" do
     chain = Harpy::SpecHelpers.build_chain(2)
-    chain.blocks.last.valid_against?(chain.blocks.first, chain.utxo_set).should be_true
+    expected = Harpy::Difficulty.required_for_block([chain.blocks.first])
+    chain.blocks.last.valid_against?(chain.blocks.first, chain.utxo_set, expected).should be_true
+  end
+
+  it "rejects a block whose difficulty does not match retarget expectations" do
+    chain = Harpy::SpecHelpers.build_chain(1, difficulty: 3)
+    genesis = chain.blocks.first
+    coinbase = Harpy::CoinbaseTx.new(
+      outputs: [Harpy::TxOutput.new(Harpy::Economics::BLOCK_REWARD, Harpy::Economics.genesis_pubkey)],
+      height: 1_u32,
+    )
+    wrong_difficulty = Harpy::Miner.mine(
+      Harpy::Block.new(1, Time.utc.to_s, [coinbase] of Harpy::BlockTx, genesis.hash, 0),
+    )
+
+    chain.append!(wrong_difficulty).should be_false
+    chain.height.should eq(1)
   end
 
   it "rejects blocks with a tampered hash" do
     chain = Harpy::SpecHelpers.build_chain(2)
     genesis = chain.blocks.first
     next_block = chain.blocks.last
+    expected = Harpy::Difficulty.required_for_block([genesis])
     tampered = Harpy::Block.new(
       next_block.index,
       next_block.timestamp,
@@ -56,11 +73,12 @@ describe Harpy::Block do
       next_block.merkle_root,
     )
 
-    tampered.valid_against?(genesis, chain.utxo_set).should be_false
+    tampered.valid_against?(genesis, chain.utxo_set, expected).should be_false
   end
 
   it "accepts a child block with the same timestamp as its parent" do
     genesis = Harpy::SpecHelpers.mined_genesis
+    expected = Harpy::Difficulty.required_for_block([genesis])
     coinbase = Harpy::CoinbaseTx.new(
       outputs: [Harpy::TxOutput.new(Harpy::Economics::BLOCK_REWARD, Harpy::Economics.genesis_pubkey)],
       height: 1_u32,
@@ -70,11 +88,12 @@ describe Harpy::Block do
     )
 
     chain = Harpy::Chain.new([genesis])
-    same_time.valid_against?(genesis, chain.utxo_set).should be_true
+    same_time.valid_against?(genesis, chain.utxo_set, expected).should be_true
   end
 
   it "rejects a child block with a timestamp before its parent" do
     genesis = Harpy::SpecHelpers.mined_genesis
+    expected = Harpy::Difficulty.required_for_block([genesis])
     coinbase = Harpy::CoinbaseTx.new(
       outputs: [Harpy::TxOutput.new(Harpy::Economics::BLOCK_REWARD, Harpy::Economics.genesis_pubkey)],
       height: 1_u32,
@@ -84,7 +103,7 @@ describe Harpy::Block do
     )
 
     chain = Harpy::Chain.new([genesis])
-    backdated.valid_against?(genesis, chain.utxo_set).should be_false
+    backdated.valid_against?(genesis, chain.utxo_set, expected).should be_false
   end
 end
 

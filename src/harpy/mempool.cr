@@ -34,8 +34,40 @@ module Harpy
       tx.inputs.any? { |input| spent.includes?(input.prev_out) }
     end
 
-    def select_for_block(max_count : UInt32 = Economics::MAX_TXS_PER_BLOCK) : Array(Transaction)
-      @transactions.first(max_count.to_i)
+    # Select mempool txs in FIFO order, respecting MAX_TXS_PER_BLOCK and the
+    # serialized transactions byte cap. Oversized leading txs are skipped so
+    # mining can still produce a valid coinbase-only block.
+    def select_for_block(
+      previous : Block,
+      miner_pubkey : String,
+      utxo_set : UtxoSet,
+      difficulty : Int32,
+      max_count : UInt32 = Economics::MAX_TXS_PER_BLOCK,
+    ) : Array(Transaction)
+      selected = [] of Transaction
+
+      @transactions.each do |tx|
+        break if selected.size >= max_count.to_i32
+
+        trial = selected + [tx]
+        candidate = Miner.build_block_with_fees(
+          previous,
+          trial,
+          miner_pubkey,
+          difficulty,
+          utxo_set,
+        )
+
+        if candidate.transactions_within_limit?
+          selected = trial
+        elsif selected.empty?
+          next
+        else
+          break
+        end
+      end
+
+      selected
     end
 
     def remove_txids(txids : Array(String)) : Nil
