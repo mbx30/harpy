@@ -5,5 +5,6 @@ require "./harpy/miner"
 require "./harpy/chain"
 require "./harpy/storage"
 require "./harpy/server"
+require "./harpy/cli"
 
-Harpy::Server.start
+exit Harpy::CLI.run(ARGV)

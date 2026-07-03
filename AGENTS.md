@@ -82,7 +82,7 @@ Fork replacement (`Chain#replace_if_more_work_valid!`) compares **cumulative PoW
 ## Roadmap (from project research)
 
 1. **Done (tutorial + hardening):** blocks, SHA-256, PoW, HTTP API, chain validation, cumulative-work fork choice, rate limits, write auth, request size caps
-2. Pick a state model — UTXO vs accounts (design before coding)
+2. **State model (design gate):** UTXO — see [docs/STATE_MODEL.md](docs/STATE_MODEL.md). Phase 5 blocked until approved.
 3. P2P networking — gossip, orphan pool, fork choice, reorgs
 4. Persistent storage — atomic writes, embedded KV (RocksDB/LMDB equivalent)
 5. Adjustable difficulty — retarget from observed block times
@@ -123,9 +123,3 @@ Standard commands (see the `## Commands` table) work as written on Linux:
 
 - Run the server: `crystal run src/harpy.cr` → listens on `http://localhost:3000` (`GET /`, `POST /new-block`).
 - Tests: `crystal spec`. Format: `crystal tool format[ --check]`. Build: `shards build` → `bin/harpy`.
-
-**Known blocking bug (be careful):** `Harpy::Block.calculate_hash` uses `OpenSSL::Digest#to_s`, which on current Crystal (1.20) returns the object inspect string (e.g. `#<OpenSSL::Digest:0x...>`, 33 chars) instead of the 64-char hex digest. Consequences:
-
-- Mining (`Harpy::Block.generate`) never finds a hash starting with `"000"`, so it **loops forever**. `POST /new-block` hangs indefinitely, and `crystal spec` hangs on the "validates block linkage" example. Always run specs/mining under a `timeout` until this is fixed.
-- `GET /` still works and returns the genesis chain (with the malformed `hash` value).
-- The correct hex digest comes from `digest.final.hexstring` (not `to_s`, and `hexdigest` is not defined on `OpenSSL::Digest`).

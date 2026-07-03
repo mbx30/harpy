@@ -4,7 +4,7 @@ Harpy is an **educational, single-node** proof-of-work blockchain with an open H
 
 **Scope:** one Kemal process, JSON file persistence, PoW with configurable hex-digit difficulty, cumulative-work fork choice on in-memory replacement.
 
-**Out of scope (deferred):** P2P gossip, eclipse/partition resistance, UTXO/account state, production key management, multi-node consensus.
+**Out of scope (deferred):** P2P gossip, eclipse/partition resistance, production key management, multi-node consensus. **UTXO state model** is designed in [STATE_MODEL.md](./STATE_MODEL.md) (Phase 4); not yet implemented in code.
 
 ## Layer taxonomy
 
@@ -72,8 +72,26 @@ Tune defaults with `HARPY_RATE_LIMIT` (bucket capacity, default `2`) and `HARPY_
 
 - `HARPY_API_KEY` + `Authorization: Bearer` or `X-API-Key` on writes when set.
 - Tutorial default: no key (local dev only).
+- **Phase 4:** Writes become signed transactions (`POST /tx`) and mining (`POST /mine`); unauthorized parties cannot forge spends without private keys. See [STATE_MODEL.md](./STATE_MODEL.md) §8.
 
 **Residual risk:** Key leakage, no rotation story. **Deferred:** secrets management, TLS termination.
+
+### 2b. Double-spend (state layer — not yet implemented)
+
+**Attack:** Spend the same UTXO twice — submit conflicting transactions to the mempool, or include conflicting spends in competing blocks.
+
+**Impact today:** N/A — blocks carry arbitrary `data` strings with no spend semantics.
+
+**Impact after Phase 4:** Unauthorized value transfer if validation is bypassed.
+
+**Mitigations (designed — [STATE_MODEL.md](./STATE_MODEL.md)):**
+
+- UTXO set keyed by `OutPoint`; each output consumed at most once (`validate_tx`, invariant I2).
+- Mempool rejects conflicting inputs before admission ([#24](https://github.com/mbx30/harpy/issues/24)).
+- `apply_block` removes spent UTXOs atomically per block ([#26](https://github.com/mbx30/harpy/issues/26)).
+- Per-block undo log for safe reorg rewind ([#31](https://github.com/mbx30/harpy/issues/31), Phase 5).
+
+**Residual risk:** Single-node tutorial has no network conflict resolution until P2P. **Deferred:** multi-node convergence tests ([#35](https://github.com/mbx30/harpy/issues/35)).
 
 ### 3. Selfish mining / fork choice games (consensus)
 
@@ -101,14 +119,18 @@ Tune defaults with `HARPY_RATE_LIMIT` (bucket capacity, default `2`) and `HARPY_
 
 **Attack:** Edit `chain.json`, truncate file, or swap in an invalid chain.
 
-**Impact:** Node refuses invalid chain on boot (`StorageError`); valid tampered chain could be accepted if PoW checks pass.
+**Impact:** Corruption (bit-rot/truncation/edits) is rejected on load via checksum; a tampered chain with a recomputed checksum is still caught by full-chain validation if PoW/linkage checks fail.
 
 **Mitigations:**
 
+- Atomic writes: temp file + `File.rename`, so a crash mid-write cannot leave a partial file ([MIC-39](https://linear.app/mbx2/issue/MIC-39)).
+- Checksum envelope: `{checksum, blocks}` with `SHA-256(blocks.to_json)`, verified on load before any Chain is built — a corruption check distinct from semantic validation ([MIC-48](https://linear.app/mbx2/issue/MIC-48)).
 - Full-chain validation on load (`Chain#valid?`).
+- Backend interface isolates the on-disk format ([MIC-49](https://linear.app/mbx2/issue/MIC-49); see [STORAGE_BACKENDS.md](./STORAGE_BACKENDS.md)).
+- `verify-chain` CLI for out-of-band integrity checks ([MIC-52](https://linear.app/mbx2/issue/MIC-52)).
 - Configurable path via `HARPY_DATA_DIR` ([MIC-43](https://linear.app/mbx2/issue/MIC-43)).
 
-**Residual risk:** Non-atomic writes, no checksum/signature on file. **Deferred:** atomic persistence, embedded KV ([roadmap](https://linear.app/mbx2/project/harpy-16c5704dd57d/overview)).
+**Residual risk:** No cryptographic signature on the file (checksum detects accidental corruption, not a determined tamperer who recomputes it — that class is caught only by `Chain#valid?`). **Deferred:** embedded KV backend ([STORAGE_BACKENDS.md](./STORAGE_BACKENDS.md)).
 
 ### 6. Block / hash integrity
 
@@ -152,6 +174,7 @@ This closes the “same height, weaker PoW” gap from naive longest-chain-by-co
 
 ## Related documents and issues
 
+- [STATE_MODEL.md](./STATE_MODEL.md) — UTXO schema, coinbase rules, undo log, API migration (Phase 4 design gate)
 - [DEMO.md](./DEMO.md) — runbook and API exercises
 - [AGENTS.md](../AGENTS.md) — architecture and commands
 - [MIC-33](https://linear.app/mbx2/issue/MIC-33) — this document
