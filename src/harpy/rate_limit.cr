@@ -78,7 +78,7 @@ module Harpy
     def call(context : HTTP::Server::Context)
       request = context.request
 
-      if request.method == "POST" && (request.path == "/mine" || request.path == "/tx")
+      if request.method == "POST" && {"/mine", "/tx", "/anchor"}.includes?(request.path)
         unless @limiter.allow?(client_key(request))
           context.response.status_code = 429
           context.response.content_type = "application/json"
