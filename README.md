@@ -1,6 +1,9 @@
 <div align="center">
 
-# 🕊️ Harpy
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/harpy-logo-dark.svg">
+  <img alt="Harpy" src="assets/harpy-logo.svg" width="300">
+</picture>
 
 **A proof-of-work blockchain in Crystal — UTXO transactions, P2P gossip, reorgs, and a Merkle anchoring layer, built for learning without cutting corners.**
 
@@ -189,6 +192,7 @@ docs/                     # design, security, and ops documentation
 | Consensus theory | [SELFISH_MINING.md](docs/SELFISH_MINING.md) · [CONFIRMATION_DEPTH.md](docs/CONFIRMATION_DEPTH.md) · [FINALITY.md](docs/FINALITY.md) |
 | Network attacks | [SYBIL_RESISTANCE.md](docs/SYBIL_RESISTANCE.md) · [ROUTING_PARTITION.md](docs/ROUTING_PARTITION.md) · [POS_CHECKPOINTING.md](docs/POS_CHECKPOINTING.md) |
 | Incident response | [INCIDENT_RESPONSE.md](docs/INCIDENT_RESPONSE.md) |
+| Brand & design system | [BRAND.md](docs/BRAND.md) |
 | Formal verification (TLA+) | [spec/tla/README.md](spec/tla/README.md) |
 | Agent-oriented guidance | [AGENTS.md](AGENTS.md) |
 

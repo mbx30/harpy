@@ -1,0 +1,36 @@
+/* ── Harpy typography tokens ────────────────────────────────────────
+   Geist for everything; Geist Mono for code, hashes, and data.
+   Display type is tracked slightly tight, echoing the logo lockup. */
+
+:root {
+  --font-sans: "Geist", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Size scale */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+  --text-3xl: 36px;
+  --text-4xl: 48px;
+
+  /* Weights (variable axis) */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Line heights */
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* Tracking */
+  --tracking-display: -0.02em; /* headings ≥ 28px */
+  --tracking-heading: -0.01em; /* headings 16–22px */
+  --tracking-normal: 0;
+  --tracking-caps: 0.08em;     /* small all-caps labels */
+}

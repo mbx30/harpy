@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
+  <title>Harpy mark</title>
+  
+  <rect x="14" y="14" width="12" height="68" rx="6" fill="#2C2C2B"></rect>
+  <rect x="70" y="14" width="12" height="68" rx="6" fill="#2C2C2B"></rect>
+  <path d="M30 56 A18 18 0 0 1 66 56 Z" fill="#E8A33D"></path>
+</svg>

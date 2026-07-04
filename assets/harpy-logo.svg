@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 336 96" width="336" height="96">
+  <title>Harpy logo</title>
+  
+  <rect x="14" y="14" width="12" height="68" rx="6" fill="#2C2C2B"></rect>
+  <rect x="70" y="14" width="12" height="68" rx="6" fill="#2C2C2B"></rect>
+  <path d="M30 56 A18 18 0 0 1 66 56 Z" fill="#E8A33D"></path>
+  
+  <text x="106" y="66" font-family="Helvetica Neue, Arial, sans-serif" font-size="50" font-weight="600" letter-spacing="-0.5" fill="#2C2C2B">Harpy</text>
+</svg>
