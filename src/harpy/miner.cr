@@ -24,6 +24,7 @@ module Harpy
           nonce,
           hash,
           block.merkle_root,
+          block.anchor_root,
         )
       end
     end
@@ -34,6 +35,7 @@ module Harpy
       miner_pubkey : String,
       difficulty : Int32,
       utxo_set : UtxoSet,
+      anchor_root : String = "",
     ) : Block
       fees = user_txs.sum(0_u64) { |tx| tx.fee(utxo_set) }
       coinbase = CoinbaseTx.new(
@@ -48,6 +50,7 @@ module Harpy
         txs,
         previous.hash,
         difficulty,
+        anchor_root: anchor_root,
       )
     end
 
@@ -55,6 +58,7 @@ module Harpy
       chain : Chain,
       miner_pubkey : String,
       verbose : Bool = false,
+      anchor_root : String = "",
     ) : Block
       difficulty = chain.next_difficulty
       selected = chain.mempool.select_for_block(
@@ -63,7 +67,7 @@ module Harpy
         chain.utxo_set,
         difficulty,
       )
-      unmined = build_block_with_fees(chain.tip, selected, miner_pubkey, difficulty, chain.utxo_set)
+      unmined = build_block_with_fees(chain.tip, selected, miner_pubkey, difficulty, chain.utxo_set, anchor_root)
       mine(unmined, verbose: verbose)
     end
 
@@ -77,6 +81,7 @@ module Harpy
         nonce,
         "",
         block.merkle_root,
+        block.anchor_root,
       ).computed_hash
     end
   end

@@ -35,6 +35,7 @@ module Harpy
       @@chain = nil
       @@storage_path = storage_path
       @@api_key = api_key
+      Anchor.reset!
     end
 
     def with_chain(&)
@@ -106,6 +107,85 @@ module Harpy
         block.to_json
       end
 
+      # Light-client header endpoints: sync/verify PoW without transaction bodies.
+      get "/header/:index" do |env|
+        index = env.params.url["index"].to_i
+        block = chain.blocks.find { |candidate| candidate.index == index }
+
+        unless block
+          halt env, status_code: 404, response: %({"error":"block not found"})
+        end
+
+        block.header.to_json
+      end
+
+      get "/headers" do |env|
+        blocks = chain.blocks
+        from = env.params.query["from"]?.try(&.to_i?) || 0
+        to = env.params.query["to"]?.try(&.to_i?) || (blocks.size - 1)
+        blocks.select { |b| b.index >= from && b.index <= to }.map(&.header).to_json
+      end
+
+      # SPV inclusion proof: header + Merkle path for a txid, verifiable client-side.
+      get "/proof/:index/:txid" do |env|
+        index = env.params.url["index"].to_i
+        target = env.params.url["txid"]
+        block = chain.blocks.find { |candidate| candidate.index == index }
+
+        unless block
+          halt env, status_code: 404, response: %({"error":"block not found"})
+        end
+
+        txids = block.transactions.map(&.txid)
+        position = txids.index(target)
+
+        unless position
+          halt env, status_code: 404, response: %({"error":"transaction not found in block"})
+        end
+
+        {header: block.header, merkle_proof: Merkle.proof(txids, position)}.to_json
+      end
+
+      # Anchoring API (MIC-81): submit a record hash to be committed on-chain.
+      post "/anchor" do |env|
+        unless Config.write_authorized?(env.request, @@api_key)
+          halt env, status_code: 401, response: %({"error":"unauthorized"})
+        end
+
+        body = env.params.json
+        record_hash = body["record_hash"]?
+
+        unless record_hash.is_a?(String) && Anchor.submit(record_hash)
+          halt env, status_code: 400, response: %({"error":"record_hash must be a 64-char hex SHA-256 digest"})
+        end
+
+        {pending: Anchor.pending.size}.to_json
+      end
+
+      # Return an inclusion proof for an anchored record: proof + sealing header.
+      # Verify client-side with Harpy::Spv.verify_anchor.
+      get "/anchor/:record_hash" do |env|
+        record_hash = env.params.url["record_hash"]
+        info = Anchor.proof_for(record_hash)
+
+        unless info
+          halt env, status_code: 404, response: %({"error":"record not anchored (unknown or not yet mined)"})
+        end
+
+        block = chain.blocks.find { |candidate| candidate.index == info.block_index }
+        unless block
+          halt env, status_code: 404, response: %({"error":"sealing block no longer on canonical chain"})
+        end
+
+        {
+          record_hash: record_hash,
+          block_index: info.block_index,
+          anchor_root: block.anchor_root,
+          merkle_proof: info.proof,
+          header:       block.header,
+        }.to_json
+      end
+
       get "/mempool" do
         {transactions: chain.mempool.transactions}.to_json
       end
@@ -153,7 +233,8 @@ module Harpy
           chain.utxo_set,
           chain.next_difficulty,
         )
-        new_block = Miner.mine_from_mempool(chain, miner_pubkey, verbose: true)
+        anchor_root = Anchor.pending_root
+        new_block = Miner.mine_from_mempool(chain, miner_pubkey, verbose: true, anchor_root: anchor_root)
 
         unless chain.append!(new_block)
           Log.warn { "block_rejected index=#{new_block.index} prev_hash=#{new_block.prev_hash}" }
@@ -161,6 +242,7 @@ module Harpy
         end
 
         chain.mempool.remove_txids(selected.map(&.txid))
+        Anchor.seal!(new_block.index)
         Storage.save(chain, @@storage_path)
         @@p2p.try &.broadcast_block(new_block)
         Log.info { "block_accepted index=#{new_block.index} hash=#{new_block.hash} height=#{chain.height}" }

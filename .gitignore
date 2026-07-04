@@ -11,6 +11,11 @@
 !/docs/POS_CHECKPOINTING.md
 !/docs/INCIDENT_RESPONSE.md
 !/docs/ROUTING_PARTITION.md
+!/docs/AUDIT_LOG_ANCHORING.md
+!/docs/NODE_HARDENING.md
+!/docs/THRESHOLD_MULTISIG.md
+!/docs/KEY_ROTATION.md
+!/docs/POST_QUANTUM_MIGRATION.md
 /lib/
 /bin/
 /.shards/

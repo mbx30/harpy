@@ -1,5 +1,6 @@
 require "digest/sha256"
 require "json"
+require "./block_header"
 
 module Harpy
   # Union type for block transaction list entries.
@@ -18,6 +19,8 @@ module Harpy
     getter prev_hash : String
     getter difficulty : Int32
     getter nonce : String
+    # Optional commitment to externally-anchored record hashes (MIC-81).
+    getter anchor_root : String
 
     def initialize(
       @index : Int32,
@@ -28,6 +31,7 @@ module Harpy
       @nonce : String = "",
       @hash : String = "",
       @merkle_root : String = "",
+      @anchor_root : String = "",
     )
       @merkle_root = @merkle_root.empty? ? compute_merkle_root : @merkle_root
     end
@@ -36,20 +40,14 @@ module Harpy
       Merkle.root(@transactions.map(&.txid))
     end
 
-    def computed_hash : String
-      io = IO::Memory.new
-      io << "harpy-block-v2\n"
-      io << "index:" << @index << '\n'
-      append_hash_field(io, "timestamp", @timestamp)
-      append_hash_field(io, "merkle_root", @merkle_root)
-      append_hash_field(io, "prev_hash", @prev_hash)
-      append_hash_field(io, "nonce", @nonce)
-
-      Digest::SHA256.hexdigest(io.to_s)
+    # Header view carrying exactly the PoW-committed fields. The header owns the
+    # canonical hash preimage so full blocks and header-only light clients agree.
+    def header : BlockHeader
+      BlockHeader.new(@index, @timestamp, @merkle_root, @prev_hash, @difficulty, @nonce, @hash, @anchor_root)
     end
 
-    private def append_hash_field(io : IO, label : String, value : String) : Nil
-      io << label << ':' << value.bytesize << ':' << value << '\n'
+    def computed_hash : String
+      header.computed_hash
     end
 
     def pow_valid? : Bool
@@ -130,6 +128,7 @@ module Harpy
         obj["nonce"]?.try(&.as_s) || "",
         obj["hash"]?.try(&.as_s) || "",
         obj["merkle_root"]?.try(&.as_s) || "",
+        obj["anchor_root"]?.try(&.as_s) || "",
       )
     end
 

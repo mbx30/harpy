@@ -66,6 +66,78 @@ describe "GET /health" do
   end
 end
 
+describe "GET /header/:index and /headers" do
+  it "returns a single block header whose hash matches" do
+    response = harpy_test_response("GET", "/header/0")
+
+    response.status_code.should eq(200)
+    body = JSON.parse(response.body)
+    header = Harpy::BlockHeader.from_json(response.body)
+    header.hash_matches?.should be_true
+    body["merkle_root"].as_s.should_not be_empty
+  end
+
+  it "404s for an unknown header index" do
+    response = harpy_test_response("GET", "/header/999")
+    response.status_code.should eq(404)
+  end
+
+  it "returns a header list" do
+    response = harpy_test_response("GET", "/headers")
+
+    response.status_code.should eq(200)
+    headers = Array(Harpy::BlockHeader).from_json(response.body)
+    headers.size.should eq(1)
+    headers.first.hash_matches?.should be_true
+  end
+end
+
+describe "GET /proof/:index/:txid" do
+  it "returns a header + merkle proof that verifies via SPV" do
+    # Fresh chain has a genesis coinbase; fetch its txid from the block.
+    block_resp = harpy_test_response("GET", "/block/0")
+    block = Harpy::Block.from_json(JSON.parse(block_resp.body))
+    coinbase_txid = block.transactions.first.txid
+
+    response = harpy_test_response("GET", "/proof/0/#{coinbase_txid}")
+    response.status_code.should eq(200)
+
+    parsed = JSON.parse(response.body)
+    header = Harpy::BlockHeader.from_json(parsed["header"].to_json)
+    proof = Array(Harpy::Merkle::ProofStep).from_json(parsed["merkle_proof"].to_json)
+
+    Harpy::Spv.verify_inclusion(coinbase_txid, proof, header).should be_true
+  end
+
+  it "404s for a txid not in the block" do
+    response = harpy_test_response("GET", "/proof/0/#{"ab" * 32}")
+    response.status_code.should eq(404)
+  end
+end
+
+describe "anchoring API endpoints" do
+  it "accepts a valid record hash submission" do
+    Harpy::Anchor.reset!
+    record = Digest::SHA256.hexdigest("endpoint-record")
+    response = harpy_test_response("POST", "/anchor", %({"record_hash":"#{record}"}))
+
+    response.status_code.should eq(200)
+    JSON.parse(response.body)["pending"].as_i.should be >= 1
+  end
+
+  it "rejects a malformed record hash with 400" do
+    Harpy::Anchor.reset!
+    response = harpy_test_response("POST", "/anchor", %({"record_hash":"nope"}))
+    response.status_code.should eq(400)
+  end
+
+  it "404s for a record that was never anchored" do
+    Harpy::Anchor.reset!
+    response = harpy_test_response("GET", "/anchor/#{"ab" * 32}")
+    response.status_code.should eq(404)
+  end
+end
+
 describe "GET /mempool" do
   it "returns an empty mempool on a fresh chain" do
     response = harpy_test_response("GET", "/mempool")
