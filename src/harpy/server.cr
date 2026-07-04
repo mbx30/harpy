@@ -64,6 +64,11 @@ module Harpy
         chain.blocks.to_json
       end
 
+      # Branded status dashboard (static; assets under public/design-system/).
+      get "/dashboard" do |env|
+        send_file env, "public/dashboard.html"
+      end
+
       get "/health" do
         with_chain do |active|
           p2p_status = if network = @@p2p

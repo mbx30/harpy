@@ -16,6 +16,10 @@
 
 **[🚀 Quick start](#quick-start)** · **[📖 Guided demo](docs/DEMO.md)** · **[⚓ Anchoring](#anchoring-hash-on-chain-data-off-chain)** · **[📚 Documentation](#documentation)**
 
+<img src="assets/dashboard.gif" alt="Harpy dashboard mining blocks" width="820">
+
+*The built-in dashboard at `/dashboard` — mining three blocks against a live node.*
+
 </div>
 
 Harpy is a from-scratch blockchain node — signed UTXO transactions, a mempool, difficulty retargeting, cumulative-work fork choice with reorgs, peer-to-peer block gossip, and a hash-anchoring/verification layer with SPV light-client proofs. It's an **educational** project (single operator, not mainnet-grade), but every layer is built and tested the way a real node would be: adversarial specs, a formally model-checked consensus core, and a chaos harness. Named after **Harpocrates**, the Greek god of silence.
@@ -62,6 +66,8 @@ shards install
 crystal run src/harpy.cr          # starts an HTTP node on 127.0.0.1:3000
 ```
 
+Then open **http://127.0.0.1:3000/dashboard** — a branded status page with live chain stats and one-click mining (shown in the GIF above).
+
 Mine your first block and inspect the chain:
 
 ```bash
@@ -80,6 +86,7 @@ New to it? Walk through [docs/DEMO.md](docs/DEMO.md) for a guided tour with real
 
 | Method & path | Auth | Description |
 |---------------|:----:|-------------|
+| `GET /dashboard` | – | Branded live status page (see GIF above) |
 | `GET /` | – | Full blockchain as JSON |
 | `GET /health` | – | Chain validity, last-save time, P2P/eclipse status |
 | `GET /validate` | – | Validity, height, cumulative work, tip hash |
@@ -170,6 +177,8 @@ src/harpy/                # block, block_header, chain, state, utxo, mempool, mi
                           # transaction, crypto, merkle, spv, anchor, difficulty, storage, server
 src/harpy/storage/        # backend interface + atomic file backend
 src/harpy/p2p/            # gossip, protocol, orphan pool, peer manager, eclipse, reputation
+public/dashboard.html     # branded live status page (GET /dashboard)
+public/design-system/     # full Harpy design system (tokens, fonts, icons, components)
 spec/                     # unit + integration + chaos specs; spec/tla/ TLA+ model
 examples/                 # runnable demos (audit-log anchoring)
 docs/                     # design, security, and ops documentation

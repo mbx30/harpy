@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harpy — node dashboard</title>
+<link rel="icon" type="image/svg+xml" href="/design-system/assets/harpy-mark.svg">
+<link rel="stylesheet" href="/design-system/styles.css">
+<style>
+  /* Dashboard layout on top of the Harpy design tokens. */
+  * { box-sizing: border-box; margin: 0; }
+
+  .container {
+    max-width: var(--container-max);
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-6) var(--space-16);
+  }
+
+  header.top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-8);
+  }
+  header.top img { display: block; height: 40px; }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 24px;
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .badge--ok   { background: var(--status-success-bg); color: var(--status-success-text); }
+  .badge--ok .dot { background: var(--status-success); }
+  .badge--bad  { background: var(--status-error-bg); color: var(--status-error-text); }
+  .badge--bad .dot { background: var(--status-error); }
+  .badge--muted { background: var(--surface-sunken); color: var(--text-secondary); }
+  .badge--muted .dot { background: var(--ink-400); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+  }
+  @media (max-width: 760px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .card {
+    background: var(--surface-card);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-5);
+  }
+
+  .stat-label {
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    letter-spacing: var(--tracking-caps);
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: var(--space-2);
+  }
+  .stat-value {
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-display);
+    line-height: var(--leading-tight);
+  }
+  .stat-value.mono { font-family: var(--font-mono); font-size: var(--text-xl); }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: var(--space-4);
+    align-items: start;
+  }
+  @media (max-width: 900px) { .row { grid-template-columns: 1fr; } }
+
+  h2 {
+    font-size: var(--text-md);
+    font-weight: var(--weight-semibold);
+    letter-spacing: var(--tracking-heading);
+    margin-bottom: var(--space-4);
+  }
+
+  .kv { display: grid; grid-template-columns: 110px 1fr; row-gap: var(--space-3); }
+  .kv dt {
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    letter-spacing: var(--tracking-caps);
+    text-transform: uppercase;
+    color: var(--text-muted);
+    align-self: center;
+  }
+  .kv dd { font-family: var(--font-mono); font-size: var(--text-sm); overflow-wrap: anywhere; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    letter-spacing: var(--tracking-caps);
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 0 var(--space-3) var(--space-2) 0;
+    border-bottom: 1px solid var(--border-default);
+  }
+  td {
+    font-size: var(--text-sm);
+    padding: var(--space-3) var(--space-3) var(--space-3) 0;
+    border-bottom: 1px solid var(--border-default);
+  }
+  tr:last-child td { border-bottom: none; }
+  td.mono { font-family: var(--font-mono); color: var(--text-secondary); }
+  td.num { font-family: var(--font-mono); }
+
+  label {
+    display: block;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    margin-bottom: var(--space-2);
+  }
+  input[type="text"] {
+    width: 100%;
+    height: 36px;
+    padding: 0 var(--space-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--text-body);
+    background: var(--surface-card);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+  }
+  input[type="text"]:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+  button.primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding: 0 var(--space-4);
+    margin-top: var(--space-3);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    font-weight: var(--weight-medium);
+    background: var(--accent);
+    color: var(--accent-contrast);
+    cursor: pointer;
+    transition: background var(--duration-fast) var(--ease-out);
+  }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+  button.primary:active:not(:disabled) { background: var(--accent-active); }
+  button.primary:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+  .hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--space-2); }
+  .result { font-size: var(--text-sm); margin-top: var(--space-3); min-height: 20px; }
+  .result.ok { color: var(--status-success-text); }
+  .result.err { color: var(--status-error-text); }
+
+  .section-gap { margin-top: var(--space-4); }
+  footer {
+    margin-top: var(--space-10);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+  }
+  footer a { color: var(--text-link); }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="top">
+    <img src="/design-system/assets/harpy-logo.svg" alt="Harpy">
+    <span id="chain-badge" class="badge badge--muted"><span class="dot"></span>Connecting</span>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <div class="stat-label">Height</div>
+      <div class="stat-value" id="stat-height">—</div>
+    </div>
+    <div class="card">
+      <div class="stat-label">Cumulative work</div>
+      <div class="stat-value mono" id="stat-work">—</div>
+    </div>
+    <div class="card">
+      <div class="stat-label">Mempool</div>
+      <div class="stat-value" id="stat-mempool">—</div>
+    </div>
+    <div class="card">
+      <div class="stat-label">Peers</div>
+      <div class="stat-value" id="stat-peers">—</div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <div class="card">
+        <h2>Tip</h2>
+        <dl class="kv">
+          <dt>Hash</dt><dd id="tip-hash">—</dd>
+          <dt>Merkle root</dt><dd id="tip-merkle">—</dd>
+          <dt>Anchor root</dt><dd id="tip-anchor">—</dd>
+        </dl>
+      </div>
+
+      <div class="card section-gap">
+        <h2>Blocks</h2>
+        <table>
+          <thead>
+            <tr><th>#</th><th>Time</th><th>Hash</th><th>Nonce</th><th>Difficulty</th></tr>
+          </thead>
+          <tbody id="blocks-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Mine block</h2>
+      <label for="pubkey">Miner public key</label>
+      <input type="text" id="pubkey" spellcheck="false" autocomplete="off">
+      <div class="hint">64-char hex Ed25519 public key. Coinbase pays this key.</div>
+      <button class="primary" id="mine-btn">Mine block</button>
+      <div class="result" id="mine-result"></div>
+    </div>
+  </div>
+
+  <footer>
+    Harpy node dashboard · reads <code>/validate</code>, <code>/headers</code>, <code>/mempool</code>, <code>/health</code> ·
+    <a href="https://github.com/mbx30/harpy">source</a>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const short = (h) => (h && h.length > 20) ? h.slice(0, 10) + "…" + h.slice(-6) : (h || "—");
+
+  // Persist a demo miner key so the flow works out of the box.
+  const KEY = "harpy.miner_pubkey";
+  let pk = localStorage.getItem(KEY);
+  if (!pk) {
+    pk = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
+    localStorage.setItem(KEY, pk);
+  }
+  $("pubkey").value = pk;
+  $("pubkey").addEventListener("change", () => localStorage.setItem(KEY, $("pubkey").value.trim()));
+
+  function setBadge(state, text) {
+    const badge = $("chain-badge");
+    badge.className = "badge badge--" + state;
+    badge.innerHTML = '<span class="dot"></span>' + text;
+  }
+
+  async function refresh() {
+    try {
+      const [validate, headers, mempool, health] = await Promise.all([
+        fetch("/validate").then((r) => r.json()),
+        fetch("/headers").then((r) => r.json()),
+        fetch("/mempool").then((r) => r.json()),
+        fetch("/health").then((r) => r.json()),
+      ]);
+
+      setBadge(validate.valid ? "ok" : "bad", validate.valid ? "Chain valid" : "Chain invalid");
+      $("stat-height").textContent = validate.height;
+      $("stat-work").textContent = validate.work;
+      $("stat-mempool").textContent = mempool.transactions.length;
+      $("stat-peers").textContent = health.p2p && health.p2p.enabled ? health.p2p.peers : "off";
+
+      const tip = headers[headers.length - 1];
+      if (tip) {
+        $("tip-hash").textContent = tip.hash;
+        $("tip-merkle").textContent = short(tip.merkle_root);
+        $("tip-anchor").textContent = tip.anchor_root ? short(tip.anchor_root) : "—";
+      }
+
+      $("blocks-body").innerHTML = headers.slice(-8).reverse().map((h) => `
+        <tr>
+          <td class="num">${h.index}</td>
+          <td class="mono">${(h.timestamp || "").replace(" UTC", "")}</td>
+          <td class="mono">${short(h.hash)}</td>
+          <td class="mono">${h.nonce}</td>
+          <td class="num">${h.difficulty}</td>
+        </tr>`).join("");
+    } catch {
+      setBadge("bad", "Node unreachable");
+    }
+  }
+
+  async function mine() {
+    const btn = $("mine-btn");
+    const out = $("mine-result");
+    const pubkey = $("pubkey").value.trim();
+    btn.disabled = true;
+    btn.textContent = "Mining…";
+    out.className = "result";
+    out.textContent = "";
+    try {
+      const resp = await fetch("/mine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ miner_pubkey: pubkey }),
+      });
+      const body = await resp.json();
+      if (resp.ok) {
+        out.className = "result ok";
+        out.textContent = "Block " + body.index + " mined.";
+      } else {
+        out.className = "result err";
+        out.textContent = body.error ? "Invalid: " + body.error : "Rejected.";
+      }
+    } catch {
+      out.className = "result err";
+      out.textContent = "Node unreachable.";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Mine block";
+      refresh();
+    }
+  }
+
+  $("mine-btn").addEventListener("click", mine);
+  refresh();
+  setInterval(refresh, 4000);
+})();
+</script>
+</body>
+</html>

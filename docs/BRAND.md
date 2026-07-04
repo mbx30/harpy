@@ -4,10 +4,16 @@ The Harpy identity — quiet, factual, developer-tool restraint. Named after
 Harpocrates, the god of silence, so the voice stays terse and the palette calm.
 
 Brand tokens are vendored as CSS in [`assets/tokens/`](../assets/tokens/); the
-logos live in [`assets/`](../assets/). The **full** design system (React
-component kit, icon set, Geist web fonts, and HTML guidelines) ships separately
-as the `harpy-design` skill package — pull that in when building a web UI or
-dashboard. This repo (a backend node) vendors only the brand identity.
+logos live in [`assets/`](../assets/). The **full** design system (component
+kit, Lucide icon set, Geist web fonts, tokens, and HTML guidelines) is vendored
+under [`public/design-system/`](../public/design-system/) and served by the node
+— see its [readme](../public/design-system/readme.md) for the complete
+foundations and component inventory.
+
+**Live example:** the node's [`/dashboard`](../public/dashboard.html) status page
+is built entirely on these tokens (warm surfaces, hairline borders, mono data,
+one amber action, terse copy) — run the node and open
+`http://127.0.0.1:3000/dashboard`.
 
 ## Logo
 

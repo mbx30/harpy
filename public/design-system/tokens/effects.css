@@ -1,0 +1,24 @@
+/* ── Harpy radius, shadow & motion tokens ───────────────────────────
+   Quiet by default: hairline borders do most of the work; shadows are
+   soft and low-contrast. Pill shapes echo the rounded pillars of the
+   logo mark. Motion is fast fades/eases — never bounces. */
+
+:root {
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;   /* default control radius */
+  --radius-lg: 10px;  /* cards, dialogs */
+  --radius-pill: 999px; /* badges, tags — the logo-pillar shape */
+
+  /* Shadows (warm-black, low alpha) */
+  --shadow-sm: 0 1px 2px rgba(25, 25, 24, 0.06);
+  --shadow-md: 0 2px 8px rgba(25, 25, 24, 0.08);
+  --shadow-lg: 0 8px 24px rgba(25, 25, 24, 0.14);
+  --shadow-overlay: 0 16px 48px rgba(25, 25, 24, 0.18);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0, 0, 1); /* @kind other */
+  --duration-fast: 120ms; /* @kind other */
+  --duration-base: 180ms; /* @kind other */
+  --duration-slow: 260ms; /* @kind other */
+}

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "harpy",
+      "runtimeExecutable": "bin/harpy.exe",
+      "runtimeArgs": [],
+      "port": 3000
+    }
+  ]
+}

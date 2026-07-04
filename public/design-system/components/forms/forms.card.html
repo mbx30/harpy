@@ -1,0 +1,53 @@
+<!-- @dsCard group="Components" viewport="700x340" subtitle="Field, Input, Select, Checkbox, Radio, Switch" name="Forms" -->
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script>window.HARPY_ICON_BASE = "../../assets/icons";</script>
+</head>
+<body style="margin:0;padding:20px;background:var(--surface-page);">
+<div id="root"></div>
+<script type="text/babel">
+const { Field, Input, Select, Checkbox, Radio, Switch, Icon } = window.HarpyDesignSystem_94e4a2;
+
+function Demo() {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 20px", alignItems: "start" }}>
+      <Field label="Block data" hint="Stored as a UTF-8 string." htmlFor="data">
+        <Input id="data" placeholder="e.g. genesis" />
+      </Field>
+      <Field label="Search" htmlFor="q">
+        <Input id="q" icon={<Icon name="search" size={16} />} placeholder="Search blocks" />
+      </Field>
+      <Field label="Previous hash" htmlFor="hash">
+        <Input id="hash" mono readOnly defaultValue="000a4f2c81d6e37b44f19c2e" />
+      </Field>
+      <Field label="Difficulty" error="Must be between 1 and 6." htmlFor="diff">
+        <Input id="diff" invalid defaultValue="9" />
+      </Field>
+      <Field label="Preset" htmlFor="preset">
+        <Select id="preset" defaultValue="3">
+          <option value="1">Difficulty 1 — instant</option>
+          <option value="3">Difficulty 3 — default</option>
+          <option value="5">Difficulty 5 — slow</option>
+        </Select>
+      </Field>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingTop: 24 }}>
+        <Checkbox label="Validate before appending" defaultChecked />
+        <div style={{ display: "flex", gap: 16 }}>
+          <Radio name="model" label="UTXO" defaultChecked />
+          <Radio name="model" label="Accounts" />
+        </div>
+        <Switch label="Auto-mine" defaultChecked />
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+</script>
+</body>
+</html>

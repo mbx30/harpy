@@ -1,0 +1,55 @@
+<!-- @dsCard group="Components" viewport="700x360" subtitle="Button, IconButton, Badge, Tag, Card, Callout, Spinner, Icon" name="Core" -->
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script>window.HARPY_ICON_BASE = "../../assets/icons";</script>
+</head>
+<body style="margin:0;padding:20px;background:var(--surface-page);">
+<div id="root"></div>
+<script type="text/babel">
+const { Button, IconButton, Icon, Badge, Tag, Card, Callout, Spinner } = window.HarpyDesignSystem_94e4a2;
+
+function Demo() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Button variant="primary">Mine block</Button>
+        <Button variant="secondary" icon={<Icon name="copy" size={16} />}>Copy hash</Button>
+        <Button variant="ghost">Cancel</Button>
+        <Button variant="danger">Delete chain</Button>
+        <Button variant="primary" disabled>Mining…</Button>
+        <IconButton aria-label="Settings"><Icon name="settings" size={16} /></IconButton>
+        <IconButton variant="outline" aria-label="Copy"><Icon name="copy" size={16} /></IconButton>
+        <Spinner size={16} />
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Badge variant="success" dot>Valid</Badge>
+        <Badge variant="accent">Genesis</Badge>
+        <Badge>Pending</Badge>
+        <Badge variant="error" dot>Invalid</Badge>
+        <Badge variant="info">Tutorial</Badge>
+        <Tag>difficulty:3</Tag>
+        <Tag onRemove={() => {}}>data:genesis</Tag>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <Card interactive>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <span style={{ fontSize: "var(--text-md)", fontWeight: 600 }}>Block #12</span>
+            <Badge variant="success" dot>Valid</Badge>
+          </div>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)" }}>000a4f2c…9c2e</span>
+        </Card>
+        <Callout variant="error" title="Invalid block">Hash does not meet difficulty.</Callout>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+</script>
+</body>
+</html>

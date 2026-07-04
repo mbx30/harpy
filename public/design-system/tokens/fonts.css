@@ -1,0 +1,20 @@
+/* Harpy webfonts — Geist Sans + Geist Mono (variable), from vercel/geist-font.
+   Substitution note: the Harpy logo lockup uses Helvetica Neue; no brand font
+   files were supplied, so Geist was chosen as the UI face (clean geometric
+   grotesk, developer-tool feel). */
+
+@font-face {
+  font-family: "Geist";
+  src: url("../assets/fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../assets/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}

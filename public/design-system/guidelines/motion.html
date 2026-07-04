@@ -1,0 +1,20 @@
+<!-- @dsCard group="Spacing" viewport="700x140" subtitle="120–260ms ease-out fades — hover the swatches" name="Motion" -->
+<!DOCTYPE html>
+<html><head><link rel="stylesheet" href="../styles.css">
+<style>
+.demo { transition: background var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out); cursor: pointer; }
+.demo:hover { background: var(--sun-400); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+</style></head>
+<body style="margin:0;padding:16px;background:var(--surface-card);">
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+  <div class="demo" style="background:var(--surface-sunken);border-radius:var(--radius-md);height:64px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;">
+    <span style="font-size:13px;font-weight:500;">fast · 120ms</span><span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">hovers, fades</span>
+  </div>
+  <div class="demo" style="background:var(--surface-sunken);border-radius:var(--radius-md);height:64px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;">
+    <span style="font-size:13px;font-weight:500;">base · 180ms</span><span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">most transitions</span>
+  </div>
+  <div class="demo" style="background:var(--surface-sunken);border-radius:var(--radius-md);height:64px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:2px;">
+    <span style="font-size:13px;font-weight:500;">slow · 260ms</span><span style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted);">dialogs, toasts</span>
+  </div>
+</div>
+</body></html>
