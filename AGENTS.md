@@ -82,9 +82,9 @@ Fork replacement (`Chain#replace_if_more_work_valid!`) compares **cumulative PoW
 ## Roadmap (from project research)
 
 1. **Done (tutorial + hardening):** blocks, SHA-256, PoW, HTTP API, chain validation, cumulative-work fork choice, rate limits, write auth, request size caps
-2. Pick a state model — UTXO vs accounts (design before coding)
-3. P2P networking — gossip, orphan pool, fork choice, reorgs
-4. Persistent storage — atomic writes, embedded KV (RocksDB/LMDB equivalent)
+2. **Done (storage integrity):** atomic `chain.json` writes (temp file + `fsync` + rename), SHA-256 checksum envelope (`{version, checksum, blocks}`), schema versioning. Legacy bare-array `chain.json` files auto-migrate on read (no rewrite until the next save). Still deferred: embedded KV (RocksDB/LMDB equivalent).
+3. Pick a state model — UTXO vs accounts (design before coding)
+4. P2P networking — gossip, orphan pool, fork choice, reorgs
 5. Adjustable difficulty — retarget from observed block times
 6. Optional: minimal VM with gas metering; Merkle anchoring API (MIC-81)
 

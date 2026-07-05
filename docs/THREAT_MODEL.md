@@ -107,8 +107,9 @@ Tune defaults with `HARPY_RATE_LIMIT` (bucket capacity, default `2`) and `HARPY_
 
 - Full-chain validation on load (`Chain#valid?`).
 - Configurable path via `HARPY_DATA_DIR` ([MIC-43](https://linear.app/mbx2/issue/MIC-43)).
+- Atomic writes (temp file + `fsync` + rename) and a SHA-256 checksum envelope (`{version, checksum, blocks}`) — a crash mid-write cannot corrupt `chain.json`, and a checksum mismatch on load raises `StorageError` before the chain is trusted.
 
-**Residual risk:** Non-atomic writes, no checksum/signature on file. **Deferred:** atomic persistence, embedded KV ([roadmap](https://linear.app/mbx2/project/harpy-16c5704dd57d/overview)).
+**Residual risk:** No directory-entry `fsync` after rename (not portable to Windows) — a crash between rename and the directory's own metadata sync could, in principle, leave the rename unobserved after an OS-level crash, though the target file's contents remain internally consistent either way. No signature (checksum protects against corruption/tampering-without-the-signing-key-workflow, not an operator with filesystem write access who can also recompute a valid checksum). **Deferred:** embedded KV ([roadmap](https://linear.app/mbx2/project/harpy-16c5704dd57d/overview)).
 
 ### 6. Block / hash integrity
 

@@ -78,18 +78,20 @@ describe "stored chain boot validation" do
     chain = Harpy::SpecHelpers.build_chain(3)
 
     begin
-      Harpy::Storage.save(chain, path)
-      blocks = Array(Harpy::Block).from_json(File.read(path))
-      blocks[1] = Harpy::Block.new(
-        blocks[1].index,
-        blocks[1].timestamp,
-        blocks[1].data,
-        blocks[1].prev_hash,
-        blocks[1].difficulty,
-        blocks[1].nonce,
+      tampered_blocks = chain.blocks.dup
+      tampered_blocks[1] = Harpy::Block.new(
+        tampered_blocks[1].index,
+        tampered_blocks[1].timestamp,
+        tampered_blocks[1].data,
+        tampered_blocks[1].prev_hash,
+        tampered_blocks[1].difficulty,
+        tampered_blocks[1].nonce,
         "deadbeef",
       )
-      File.write(path, blocks.to_json)
+      # Persist through Storage.save so the checksum matches the tampered
+      # blocks (a forged-but-checksum-valid file) — boot refusal here must
+      # come from Chain#valid? rejecting the broken hash, not the checksum.
+      Harpy::Storage.save(Harpy::Chain.new(tampered_blocks), path)
 
       expect_raises Harpy::StorageError do
         Harpy::Storage.load_or_genesis(path)
