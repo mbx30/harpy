@@ -33,7 +33,8 @@ describe Harpy::Config do
 
   it "treats HARPY_DATA_DIR as a directory" do
     Harpy::SpecHelpers.with_env("HARPY_DATA_DIR", "custom-data") do
-      Harpy::Config.storage_path.should eq("custom-data/chain.json")
+      # File.join uses the platform separator ("\\" on Windows).
+      Harpy::Config.storage_path.should eq(File.join("custom-data", "chain.json"))
     end
   end
 

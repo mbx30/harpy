@@ -1,0 +1,53 @@
+# Smart contract security CI (MIC-84).
+#
+# Gate: any change to the contract-execution surface (the Harpy VM) must pass
+# static analysis, the full execution-semantics property suite, and seeded
+# fuzzing before merge. docs/CONTRACT_SECURITY_CI.md maps these stages onto
+# the EVM-world toolchain (Slither / Mythril / Smartian) they stand in for.
+name: contract-security
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "src/harpy/vm.cr"
+      - "spec/vm_spec.cr"
+      - "spec/vm_fuzz_spec.cr"
+      - ".github/workflows/contract-security.yml"
+  pull_request:
+    paths:
+      - "src/harpy/vm.cr"
+      - "spec/vm_spec.cr"
+      - "spec/vm_fuzz_spec.cr"
+      - ".github/workflows/contract-security.yml"
+
+jobs:
+  static-analysis:
+    name: Static analysis (format + strict build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crystal-lang/install-crystal@v1
+      - run: shards install
+      - name: Format check
+        run: crystal tool format --check src/harpy/vm.cr spec/vm_spec.cr spec/vm_fuzz_spec.cr
+      - name: Build with warnings as errors
+        run: crystal build --no-codegen --error-on-warnings src/harpy.cr
+
+  execution-semantics:
+    name: Execution semantics (property tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crystal-lang/install-crystal@v1
+      - run: shards install
+      - run: crystal spec spec/vm_spec.cr --no-color
+
+  fuzzing:
+    name: Seeded fuzzing (never-crash + invariants)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crystal-lang/install-crystal@v1
+      - run: shards install
+      - run: crystal spec spec/vm_fuzz_spec.cr --no-color

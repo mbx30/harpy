@@ -1,0 +1,61 @@
+# Persistent 3-node Harpy staging testnet (MIC-74).
+#
+#   docker compose -f docker-compose.testnet.yml up -d --build
+#
+# Chain state persists in named volumes across restarts — the "persistent"
+# part of the testnet. Runbook, reset policy, and public-exposure hardening:
+# docs/TESTNET.md. HTTP APIs bind to the host loopback only by default;
+# publishing them publicly is a deliberate step documented in the runbook.
+
+x-harpy-common: &harpy-common
+  build: .
+  restart: unless-stopped
+  environment: &harpy-env
+    HARPY_BIND_HOST: "0.0.0.0" # inside the container network only
+    HARPY_DATA_DIR: /data
+    HARPY_DIFFICULTY: "3"
+    # Set HARPY_API_KEY in .env to require auth on all write endpoints.
+    HARPY_API_KEY: ${HARPY_API_KEY:-}
+    HARPY_RATE_LIMIT: "2"
+    HARPY_RATE_LIMIT_WINDOW: "10"
+
+services:
+  seed:
+    <<: *harpy-common
+    hostname: seed
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - seed-data:/data
+
+  node2:
+    <<: *harpy-common
+    hostname: node2
+    environment:
+      <<: *harpy-env
+      HARPY_P2P_PEERS: seed
+    ports:
+      - "127.0.0.1:3002:3000"
+    volumes:
+      - node2-data:/data
+    depends_on:
+      - seed
+
+  node3:
+    <<: *harpy-common
+    hostname: node3
+    environment:
+      <<: *harpy-env
+      HARPY_P2P_PEERS: seed,node2
+    ports:
+      - "127.0.0.1:3003:3000"
+    volumes:
+      - node3-data:/data
+    depends_on:
+      - seed
+      - node2
+
+volumes:
+  seed-data:
+  node2-data:
+  node3-data:

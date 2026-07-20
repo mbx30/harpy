@@ -36,6 +36,42 @@ module Harpy
       @@storage_path = storage_path
       @@api_key = api_key
       Anchor.reset!
+      MineJobs.reset!
+    end
+
+    # Raised when a mined block fails chain validation on append.
+    class MiningRejected < Exception; end
+
+    # Mine one block from the mempool and append it: the shared core of the
+    # synchronous route and the async job worker. Holds the chain mutex so
+    # mining never interleaves with P2P block application.
+    def mine_block!(miner_pubkey : String) : Block
+      @@chain_mutex.synchronize do
+        selected = chain.mempool.select_for_block(
+          chain.tip,
+          miner_pubkey,
+          chain.utxo_set,
+          chain.next_difficulty,
+        )
+        batch = Anchor.take_pending_batch!
+        anchor_root = batch.try &.root || ""
+        sealed_leaves = batch.try &.leaves || [] of String
+        new_block = Miner.mine_from_mempool(chain, miner_pubkey, verbose: true, anchor_root: anchor_root)
+
+        unless chain.append!(new_block)
+          # Restore the batch if mining succeeded but validation rejected the block.
+          sealed_leaves.each { |hash| Anchor.submit(hash) unless Anchor.pending.includes?(hash) }
+          Log.warn { "block_rejected index=#{new_block.index} prev_hash=#{new_block.prev_hash}" }
+          raise MiningRejected.new("block rejected by chain validation")
+        end
+
+        chain.mempool.remove_txids(selected.map(&.txid))
+        Anchor.seal!(new_block.hash, sealed_leaves)
+        Storage.save(chain, @@storage_path)
+        @@p2p.try &.broadcast_block(new_block)
+        Log.info { "block_accepted index=#{new_block.index} hash=#{new_block.hash} height=#{chain.height}" }
+        new_block
+      end
     end
 
     def with_chain(&)
@@ -233,30 +269,36 @@ module Harpy
         end
 
         miner_pubkey = pubkey_field
-        selected = chain.mempool.select_for_block(
-          chain.tip,
-          miner_pubkey,
-          chain.utxo_set,
-          chain.next_difficulty,
-        )
-        batch = Anchor.take_pending_batch!
-        anchor_root = batch.try &.root || ""
-        sealed_leaves = batch.try &.leaves || [] of String
-        new_block = Miner.mine_from_mempool(chain, miner_pubkey, verbose: true, anchor_root: anchor_root)
 
-        unless chain.append!(new_block)
-          # Restore the batch if mining succeeded but validation rejected the block.
-          sealed_leaves.each { |hash| Anchor.submit(hash) unless Anchor.pending.includes?(hash) }
-          Log.warn { "block_rejected index=#{new_block.index} prev_hash=#{new_block.prev_hash}" }
+        # Async mode (MIC-44): 202 + job id, mined by the worker fiber. CPU
+        # abuse on POST is bounded by MineJobs::MAX_QUEUE, not request volume.
+        if body["async"]? == true
+          job = MineJobs.enqueue(miner_pubkey)
+          unless job
+            halt env, status_code: 503, response: %({"error":"mining queue full"})
+          end
+          env.response.status_code = 202
+          next {job_id: job.id, state: job.state.to_s, poll: "/mine-jobs/#{job.id}"}.to_json
+        end
+
+        begin
+          new_block = mine_block!(miner_pubkey)
+        rescue MiningRejected
           halt env, status_code: 422, response: %({"error":"block rejected by chain validation"})
         end
 
-        chain.mempool.remove_txids(selected.map(&.txid))
-        Anchor.seal!(new_block.hash, sealed_leaves)
-        Storage.save(chain, @@storage_path)
-        @@p2p.try &.broadcast_block(new_block)
-        Log.info { "block_accepted index=#{new_block.index} hash=#{new_block.hash} height=#{chain.height}" }
         new_block.to_json
+      end
+
+      # Poll an async mining job (MIC-44).
+      get "/mine-jobs/:id" do |env|
+        job = MineJobs.find(env.params.url["id"])
+
+        unless job
+          halt env, status_code: 404, response: %({"error":"unknown job id"})
+        end
+
+        job.to_json
       end
     end
 
@@ -273,6 +315,8 @@ module Harpy
         @@p2p = P2p::Network.new(chain, storage_path, Config.p2p_port, @@chain_mutex)
         @@p2p.not_nil!.start
       end
+
+      spawn { MineJobs.run_worker { |pubkey| mine_block!(pubkey) } }
 
       Kemal.run
     end

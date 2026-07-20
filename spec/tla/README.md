@@ -1,4 +1,4 @@
-# Formal verification — TLA+ consensus spec (MIC-70)
+# Formal verification — TLA+ consensus specs (MIC-70, MIC-78)
 
 [`HarpyConsensus.tla`](HarpyConsensus.tla) is a TLA+ model of Harpy's
 cumulative-work fork choice (`Chain#replace_if_more_work_valid!` in
@@ -40,10 +40,46 @@ quickly). `CHECK_DEADLOCK FALSE` is set because the model is bounded and
 terminating (mining stops at `MaxBlocks`), so a terminal state is expected, not a
 liveness bug.
 
+## PoW adversary model — `HarpyPoW.tla` (MIC-78)
+
+[`HarpyPoW.tla`](HarpyPoW.tla) is the PoW-specific companion model, following
+the approach of DiGiacomo-Castillo et al., *Model checking blockchain consensus
+protocols* (IEEE Blockchain 2020). Where `HarpyConsensus.tla` checks the fork
+choice rule in isolation, this model races an explicit withholding adversary
+against an honest miner and checks the property applications actually rely on:
+**k-deep confirmation** (`CommittedStable` — a block an observer accepted at
+`ConfirmDepth` confirmations is never reorged out).
+
+Run both configurations:
+
+```bash
+# Safe: adversary budget <= ConfirmDepth. Expect: no error.
+java -cp tla2tools.jar tlc2.TLC -nowarning -config HarpyPoW.cfg HarpyPoW.tla
+
+# Attack: adversary can out-mine the depth. Expect: CommittedStable violated,
+# with the textbook double-spend as the counterexample trace.
+java -cp tla2tools.jar tlc2.TLC -nowarning -config HarpyPoWAttack.cfg HarpyPoW.tla
+```
+
+Verified results (TLC 2.19, 2026-07-19):
+
+- `HarpyPoW.cfg` (`ConfirmDepth = 3`, `MaxAdvBlocks = 3`, `MaxHonestBlocks = 4`)
+  — **no error**, 95,141 states generated / 44,385 distinct.
+- `HarpyPoWAttack.cfg` (`ConfirmDepth = 2`, `MaxAdvBlocks = 4`) —
+  **`CommittedStable` violated**: honest chain reaches height 3, the observer
+  commits block 1 at depth 2, then the adversary releases a 4-block private
+  fork from genesis and `Adopt` orphans the committed block. Note the
+  arithmetic: a k-deep commit first happens at honest height k+1, so the
+  private fork from genesis needs k+2 blocks — the reason `MaxAdvBlocks = 3`
+  with `ConfirmDepth = 2` is still safe.
+
+This is the qualitative shape behind [docs/CONFIRMATION_DEPTH.md](../../docs/CONFIRMATION_DEPTH.md):
+confirmation depth must exceed the adversary's plausible private lead, and the
+Gervais MDP framework turns that into a probability given a hashrate share.
+
 ## Scope
 
-This abstracts a block to `(parent, work)`. Transaction/UTXO validity, coinbase
-rules, and the per-block undo log ([state.cr](../../src/harpy/state.cr)) are
-covered by the Crystal suite — including the consensus-layer chaos harness in
-[../chaos_harness_spec.cr](../chaos_harness_spec.cr). MIC-78 (an alternative
-PoW-specific model check) can extend this module.
+Both modules abstract a block to `(parent, work)`. Transaction/UTXO validity,
+coinbase rules, and the per-block undo log ([state.cr](../../src/harpy/state.cr))
+are covered by the Crystal suite — including the consensus-layer chaos harness
+in [../chaos_harness_spec.cr](../chaos_harness_spec.cr).

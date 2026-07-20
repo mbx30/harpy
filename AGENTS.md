@@ -41,6 +41,8 @@ src/
     block.cr            # Block struct, SHA-256 hashing, validation
     chain.cr            # In-memory chain, UTXO replay, fork replacement
     miner.cr            # Proof-of-work mining loop
+    vm.cr               # Minimal stack VM with gas metering (MIC-64)
+    mine_jobs.cr        # Async mining job queue: 202 + job id (MIC-44)
     storage.cr          # JSON load/save, genesis bootstrap
     config.cr           # Env config, size limits, write auth
     rate_limit.cr       # Per-IP token bucket on POST /mine and /tx
@@ -67,7 +69,8 @@ spec/                   # Tests + fixtures/hash_vectors.json
 | `GET` | `/block/:index` | Single block by index |
 | `GET` | `/mempool` | Pending transactions |
 | `POST` | `/tx` | Body: signed `Transaction` JSON — validates and admits to mempool |
-| `POST` | `/mine` | Body: `{ "miner_pubkey": "..." }` — mines coinbase + mempool txs |
+| `POST` | `/mine` | Body: `{ "miner_pubkey": "..." }` — mines coinbase + mempool txs. Add `"async": true` for 202 + job id (MIC-44) |
+| `GET` | `/mine-jobs/:id` | Poll an async mining job: state (`queued`/`running`/`done`/`failed`), block or error |
 
 `POST /tx` responses:
 
@@ -84,12 +87,14 @@ spec/                   # Tests + fixtures/hash_vectors.json
 
 | Status | Condition |
 |--------|-----------|
-| 200 | Block mined and appended |
+| 200 | Block mined and appended (synchronous mode) |
+| 202 | `"async": true` — job accepted; poll `/mine-jobs/:id` |
 | 400 | Missing/invalid `miner_pubkey` |
 | 401 | `HARPY_API_KEY` set but request lacks valid credentials |
 | 413 | JSON body exceeds 64 KiB |
 | 422 | Mined block rejected by chain validation |
 | 429 | Per-IP rate limit exceeded |
+| 503 | Async mining queue full (`Harpy::MineJobs::MAX_QUEUE`) |
 
 Default PoW difficulty: **3** leading zero hex digits (`Harpy::Block::DEFAULT_DIFFICULTY`). Override at genesis with `HARPY_DIFFICULTY` (see `docs/DEMO.md`). Difficulty retargets every 10 blocks toward a 60-second target interval.
 

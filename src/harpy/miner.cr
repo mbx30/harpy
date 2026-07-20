@@ -5,6 +5,9 @@ module Harpy
     def mine(block : Block, verbose : Bool = false) : Block
       i = 0
       loop do
+        # Let other fibers (HTTP, P2P, job polling) run while an async mining
+        # job grinds through nonces (MIC-44).
+        Fiber.yield if i & 0xFFF == 0
         nonce = i.to_s(16)
         hash = hash_for(block, nonce)
 
