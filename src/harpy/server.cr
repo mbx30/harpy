@@ -235,8 +235,15 @@ module Harpy
         end
 
         block = chain.block_by_hash(info.block_hash)
-        headers = block ? chain.blocks[0..block.index].map(&.header) : [] of BlockHeader
-        unless block && Spv.verify_anchor(record_hash, info.proof, headers, chain.genesis_hash)
+        verification_headers = chain.blocks.map(&.header)
+        unless block && Spv.verify_anchor(
+                 record_hash,
+                 info.proof,
+                 verification_headers,
+                 block.index,
+                 chain.genesis_hash,
+                 chain.tip.hash,
+               )
           halt env, status_code: 404, response: %({"error":"record not anchored (unknown or not yet mined)"})
         end
 

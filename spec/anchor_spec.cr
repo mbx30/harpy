@@ -77,13 +77,27 @@ describe Harpy::Anchor do
       info = Harpy::Anchor.proof_for(r).not_nil!
       sealing = chain.block_by_hash(info.block_hash).not_nil!
       headers = chain.blocks[0..sealing.index].map(&.header)
-      Harpy::Spv.verify_anchor(r, info.proof, headers, chain.genesis_hash).should be_true
+      Harpy::Spv.verify_anchor(
+        r,
+        info.proof,
+        headers,
+        sealing.index,
+        chain.genesis_hash,
+        chain.tip.hash,
+      ).should be_true
     end
 
     reference = Harpy::Anchor.proof_for(records[0]).not_nil!
     sealing = chain.block_by_hash(reference.block_hash).not_nil!
     headers = chain.blocks[0..sealing.index].map(&.header)
-    Harpy::Spv.verify_anchor(rec("forged"), reference.proof, headers, chain.genesis_hash).should be_false
+    Harpy::Spv.verify_anchor(
+      rec("forged"),
+      reference.proof,
+      headers,
+      sealing.index,
+      chain.genesis_hash,
+      chain.tip.hash,
+    ).should be_false
   end
 
   it "drops stale index entries after reorg pruning" do

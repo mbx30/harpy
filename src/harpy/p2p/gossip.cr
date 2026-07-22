@@ -38,6 +38,7 @@ module Harpy
         @orphan_pool = OrphanPool.new
         @peer_manager = PeerManager.new
         @sync_chains = {} of String => Chain
+        @sync_locators = {} of String => Array(String)
         @server = nil
         @running = false
       end
@@ -157,7 +158,10 @@ module Harpy
             handle_message(peer, message)
           end
         ensure
-          @mutex.synchronize { @sync_chains.delete(id) }
+          @mutex.synchronize do
+            @sync_chains.delete(id)
+            @sync_locators.delete(id)
+          end
           @peer_manager.disconnect(id)
           socket.close unless socket.closed?
         end
@@ -214,7 +218,9 @@ module Harpy
         local_tip = @mutex.synchronize { @chain.tip.hash }
         return if peer.remote_tip_hash == local_tip
 
-        peer.send_message(Message.get_blocks_after(block_locator, MAX_BLOCKS_PER_SYNC))
+        locator = block_locator
+        @mutex.synchronize { @sync_locators[peer.id] = locator }
+        peer.send_message(Message.get_blocks_after(locator, MAX_BLOCKS_PER_SYNC))
       end
 
       private def request_sync_range(peer : Peer, index : Int32) : Nil
@@ -377,11 +383,31 @@ module Harpy
           return
         end
 
+        unless @peer_manager.reputation.record_sync_control(peer.identity)
+          @peer_manager.record_misbehavior(peer.identity)
+          return
+        end
+
+        prefix = @mutex.synchronize do
+          requested_locator = @sync_locators.delete(peer.id)
+          next nil unless requested_locator && requested_locator.includes?(common_hash)
+
+          common_index = @chain.find_block_index_by_hash(common_hash)
+          next nil unless common_index && common_index + 1 == index
+
+          @chain.blocks[0...index].dup
+        end
+        unless prefix
+          @peer_manager.record_misbehavior(peer.identity)
+          return
+        end
+
+        candidate = Chain.new(prefix)
         initialized = @mutex.synchronize do
           common_index = @chain.find_block_index_by_hash(common_hash)
           next false unless common_index && common_index + 1 == index
 
-          @sync_chains[peer.id] = Chain.new(@chain.blocks[0...index])
+          @sync_chains[peer.id] = candidate
           peer.sync_next_index = index
           true
         end

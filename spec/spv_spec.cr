@@ -14,7 +14,14 @@ describe Harpy::Spv do
         proof = Harpy::Merkle.proof(txids, 0)
         headers = chain.blocks[0..index].map(&.header)
 
-        Harpy::Spv.verify_inclusion(txids.first, proof, headers, chain.genesis_hash).should be_true
+        Harpy::Spv.verify_inclusion(
+          txids.first,
+          proof,
+          headers,
+          index,
+          chain.genesis_hash,
+          headers.last.hash,
+        ).should be_true
       end
     end
 
@@ -27,7 +34,9 @@ describe Harpy::Spv do
         spv_txid("outsider"),
         proof,
         chain.blocks.map(&.header),
+        target.index,
         chain.genesis_hash,
+        chain.tip.hash,
       ).should be_false
     end
 
@@ -53,7 +62,9 @@ describe Harpy::Spv do
         target.transactions.first.txid,
         proof,
         headers,
+        target.index,
         chain.genesis_hash,
+        chain.tip.hash,
       ).should be_false
     end
 
@@ -88,7 +99,9 @@ describe Harpy::Spv do
         target.transactions.first.txid,
         proof,
         headers,
+        target.index,
         chain.genesis_hash,
+        chain.tip.hash,
       ).should be_false
     end
   end
@@ -96,17 +109,25 @@ describe Harpy::Spv do
   describe ".verify_header_chain" do
     it "accepts a real mined chain's headers" do
       chain = Harpy::SpecHelpers.build_chain(3)
-      Harpy::Spv.verify_header_chain(chain.blocks.map(&.header), chain.genesis_hash).should be_true
+      Harpy::Spv.verify_header_chain(
+        chain.blocks.map(&.header),
+        chain.genesis_hash,
+        chain.tip.hash,
+      ).should be_true
     end
 
     it "rejects an incomplete chain that starts at the target header" do
       chain = Harpy::SpecHelpers.build_chain(2)
-      Harpy::Spv.verify_header_chain([chain.tip.header], chain.genesis_hash).should be_false
+      Harpy::Spv.verify_header_chain([chain.tip.header], chain.genesis_hash, chain.tip.hash).should be_false
     end
 
     it "rejects a caller-supplied genesis hash that is not trusted" do
       chain = Harpy::SpecHelpers.build_chain(2)
-      Harpy::Spv.verify_header_chain(chain.blocks.map(&.header), "0" * 64).should be_false
+      Harpy::Spv.verify_header_chain(
+        chain.blocks.map(&.header),
+        "0" * 64,
+        chain.tip.hash,
+      ).should be_false
     end
 
     it "rejects a self-consistent downgraded genesis against the trusted hash" do
@@ -134,7 +155,11 @@ describe Harpy::Spv do
 
       downgraded.hash_matches?.should be_true
       downgraded.pow_valid?.should be_true
-      Harpy::Spv.verify_header_chain([downgraded], trusted.genesis_hash).should be_false
+      Harpy::Spv.verify_header_chain(
+        [downgraded],
+        trusted.genesis_hash,
+        trusted.tip.hash,
+      ).should be_false
     end
 
     it "rejects attacker-sized genesis difficulty without allocating its prefix" do
@@ -161,7 +186,7 @@ describe Harpy::Spv do
       )
 
       hostile.pow_valid?.should be_false
-      Harpy::Spv.verify_header_chain([hostile], hostile.hash).should be_false
+      Harpy::Spv.verify_header_chain([hostile], hostile.hash, hostile.hash).should be_false
     end
 
     it "rejects headers with a broken prev_hash link" do
@@ -188,7 +213,25 @@ describe Harpy::Spv do
         draft.anchor_root,
       )
 
-      Harpy::Spv.verify_header_chain(headers, chain.genesis_hash).should be_false
+      Harpy::Spv.verify_header_chain(headers, chain.genesis_hash, chain.tip.hash).should be_false
+    end
+
+    it "rejects a valid private fork that does not reach the trusted tip" do
+      honest = Harpy::SpecHelpers.build_chain(3)
+      genesis = honest.blocks.first
+      attacker_key = Harpy::Crypto.pubkey_hex(Harpy::SpecHelpers.generate_keypair[1])
+      private_fork = Harpy::SpecHelpers.extend_fork_from(
+        genesis,
+        2,
+        seconds_between: 60,
+        miner_pubkey: attacker_key,
+      )
+
+      Harpy::Spv.verify_header_chain(
+        private_fork.blocks.map(&.header),
+        honest.genesis_hash,
+        honest.tip.hash,
+      ).should be_false
     end
   end
 end

@@ -1,8 +1,9 @@
 # NIPoPoW and superlight client evaluation (MIC-93)
 
-Harpy ships a basic SPV client (MIC-86): sync all headers, verify PoW and
-Merkle inclusion. Cost is linear in chain length — fine for a tutorial chain,
-and the question here is what lies beyond if sync cost ever matters.
+Harpy ships a basic SPV client (MIC-86): sync all headers between a pinned
+genesis and an independently obtained trusted tip/checkpoint, verify PoW, then
+verify Merkle inclusion. Cost is linear in chain length — fine for a tutorial
+chain, and the question here is what lies beyond if sync cost ever matters.
 Evaluated designs: NIPoPoWs / lazy blockchains
 ([arXiv:2203.15968](https://arxiv.org/abs/2203.15968)), LightSync
 ([arXiv:2112.03092](https://arxiv.org/abs/2112.03092)), committee-based light
@@ -44,9 +45,10 @@ different way of consuming the same header chain.
 
 ## Verdict
 
-- **Do nothing now.** Full-header SPV is correct, simple, and cheap at any
-  plausible Harpy scale; superlight sync solves a size problem Harpy does not
-  have.
+- **Do nothing now.** Full-header SPV is correct relative to its explicit
+  trusted-tip/checkpoint assumption, simple, and cheap at any plausible Harpy
+  scale; superlight sync solves a size problem Harpy does not have. A tip
+  obtained from the same proof server is not a trust root.
 - **If sublinear sync is ever needed, NIPoPoW is the chosen design** (option
   2): it is the only sublinear option with no new trust assumption. The
   upgrade cost is one header field (interlink commitment) — schedule it with

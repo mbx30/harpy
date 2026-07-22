@@ -50,7 +50,7 @@ Harpy is a from-scratch blockchain node — signed UTXO transactions, a mempool,
 
 **Verification layer**
 - ⚓ **Merkle anchoring API + SDK** — commit external record hashes on-chain, get inclusion proofs ([AUDIT_LOG_ANCHORING.md](docs/AUDIT_LOG_ANCHORING.md))
-- 🪶 **SPV light clients** — verify a trusted header chain + Merkle path, no full node
+- 🪶 **SPV light clients** — verify a genesis-and-tip-pinned header chain + Merkle path, no full node
 
 **Assurance**
 - ✅ **TLA+ consensus spec, model-checked** with TLC — the fork-choice safety property holds across the state space ([spec/tla](spec/tla/README.md))
@@ -104,16 +104,16 @@ New to it? Walk through [docs/DEMO.md](docs/DEMO.md) for a guided tour with real
 
 ## Anchoring: hash-on-chain, data off-chain
 
-Harpy's endgame is a **verification layer**: commit a record's hash on-chain and keep the data anywhere. The chain proves the record existed at a point in time; a light client verifies it from the complete header chain rooted at a trusted genesis plus a Merkle proof — no full node required.
+Harpy's endgame is a **verification layer**: commit a record's hash on-chain and keep the data anywhere. A light client verifies it from the complete header chain between a caller-pinned genesis and independently obtained trusted tip/checkpoint, plus a Merkle proof — no full node required. Genesis pinning alone does not establish canonicality.
 
 ```bash
 crystal run examples/audit_log_anchoring.cr   # anchors log lines, proves inclusion, → DEMO OK
 ```
 
 ```crystal
-client = Harpy::AnchorClient.new(trusted_genesis_hash, "http://127.0.0.1:3000")
+client = Harpy::AnchorClient.new(trusted_genesis_hash, trusted_tip_hash, "http://127.0.0.1:3000")
 client.submit(digest)     # queue a record hash  →  next POST /mine seals it into the block
-client.verify(digest)     # fetch headers + proof and verify from trusted genesis → true
+client.verify(digest)     # verify proof against the independently pinned tip → true
 ```
 
 Full walkthrough: [docs/AUDIT_LOG_ANCHORING.md](docs/AUDIT_LOG_ANCHORING.md).

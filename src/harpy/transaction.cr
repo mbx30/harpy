@@ -35,10 +35,18 @@ module Harpy
     end
 
     def fee(utxo_set : UtxoSet) : UInt64
-      input_sum = @inputs.sum(0_u64) do |input|
-        utxo_set[input.prev_out].try(&.output.amount) || 0_u64
+      input_sum = 0_u64
+      @inputs.each do |input|
+        amount = utxo_set[input.prev_out].try(&.output.amount) || 0_u64
+        return 0_u64 if amount > UInt64::MAX - input_sum
+        input_sum += amount
       end
-      output_sum = @outputs.sum(0_u64, &.amount)
+
+      output_sum = 0_u64
+      @outputs.each do |output|
+        return 0_u64 if output.amount > UInt64::MAX - output_sum
+        output_sum += output.amount
+      end
       return 0_u64 if input_sum < output_sum
 
       input_sum - output_sum

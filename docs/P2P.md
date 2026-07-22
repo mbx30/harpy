@@ -78,6 +78,8 @@ Reorg requires **strictly greater** cumulative work (`16^difficulty` per block).
 | Max peers per /16 subnet | 2 | `EclipseGuard` bucketing |
 | Anchor peers | 2 slots | `HARPY_ANCHOR_PEERS` bypass subnet cap |
 | Inv rate limit | 50 hashes per peer per 10 s | Max 50 unique lowercase 64-hex hashes per message |
+| Block response budget | 10 requests and 8 MiB per peer IP per 10 s | Max 2 MiB per request |
+| Sync-control budget | 2 accepted `syncbegin` messages per peer IP per 10 s | Unsolicited sessions are rejected |
 
 `/health` exposes P2P status when enabled:
 

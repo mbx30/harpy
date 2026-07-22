@@ -119,6 +119,37 @@ describe Harpy::P2p::OrphanPool do
     chain.accept_block!(parent, pool).should eq(Harpy::Chain::BlockAcceptResult::Connected)
     chain.height.should eq(2)
   end
+
+  it "rejects overflowing orphan output totals without mutating the parent path" do
+    chain = Harpy::SpecHelpers.build_chain(1)
+    genesis_output = Harpy::OutPoint.new(chain.tip.transactions.first.txid, 0_u32)
+    poison_tx = Harpy::Transaction.new(
+      inputs: [Harpy::TxInput.new(genesis_output)],
+      outputs: [
+        Harpy::TxOutput.new(UInt64::MAX, Harpy::Economics.genesis_pubkey),
+        Harpy::TxOutput.new(UInt64::MAX, Harpy::Economics.genesis_pubkey),
+      ],
+    )
+    poison_coinbase = Harpy::CoinbaseTx.new(
+      outputs: [Harpy::TxOutput.new(Harpy::Economics::BLOCK_REWARD, Harpy::Economics.genesis_pubkey)],
+      height: 2_u32,
+    )
+    poison = Harpy::Miner.mine(
+      Harpy::Block.new(
+        2,
+        Harpy::Difficulty.next_timestamp(chain.blocks),
+        [poison_coinbase, poison_tx] of Harpy::BlockTx,
+        Digest::SHA256.hexdigest("unknown-parent"),
+        0,
+      ),
+    )
+    pool = Harpy::P2p::OrphanPool.new
+
+    chain.accept_block!(poison, pool).should eq(Harpy::Chain::BlockAcceptResult::Rejected)
+    pool.size.should eq(0)
+    Harpy::State.validate_tx(poison_tx, chain.utxo_set, 100_u32).should be_false
+    chain.height.should eq(1)
+  end
 end
 
 describe "chain reorg with undo data" do
@@ -178,6 +209,18 @@ describe Harpy::P2p::Reputation do
       start,
     ).should be_false
     reputation.record_block_response(peer, 1024, start + 11.seconds).should be_true
+  end
+
+  it "caps sync-control replay attempts per canonical IP" do
+    reputation = Harpy::P2p::Reputation.new
+    peer = "198.51.100.30"
+    start = Time.utc
+
+    Harpy::P2p::Reputation::MAX_SYNC_CONTROLS_PER_WINDOW.times do
+      reputation.record_sync_control(peer, start).should be_true
+    end
+    reputation.record_sync_control(peer, start).should be_false
+    reputation.record_sync_control(peer, start + 11.seconds).should be_true
   end
 end
 
@@ -331,6 +374,39 @@ describe "P2P protocol validation" do
 end
 
 describe "P2P attack regressions" do
+  it "rejects an unsolicited sync session without replaying a candidate chain" do
+    with_p2p_test_network do |network, port|
+      client = p2p_test_client(port)
+      Harpy::P2p::Wire.write(
+        client,
+        Harpy::P2p::Message.handshake(
+          network.chain.genesis_hash,
+          network.chain.height,
+          network.chain.tip.hash,
+        ),
+      )
+      Harpy::P2p::Wire.read(client).not_nil!.type.should eq("handshake_ack")
+
+      Harpy::P2p::Wire.write(
+        client,
+        Harpy::P2p::Message.sync_begin(network.chain.height, network.chain.tip.hash),
+      )
+      candidate = Harpy::Miner.mine_from_mempool(
+        network.chain,
+        Harpy::Economics.genesis_pubkey,
+        verbose: false,
+      )
+      Harpy::P2p::Wire.write(client, Harpy::P2p::Message.sync_block_payload(candidate))
+
+      rejection = Harpy::P2p::Wire.read(client).not_nil!
+      rejection.type.should eq("reject")
+      rejection.reason.should eq("invalid sync block")
+      network.chain.height.should eq(1)
+      network.peer_manager.reputation.score("127.0.0.1").should be < Harpy::P2p::Reputation::INITIAL_SCORE
+      client.close
+    end
+  end
+
   it "closes a peer advertising protocol version 999" do
     with_p2p_test_network do |network, port|
       client = p2p_test_client(port)

@@ -247,8 +247,13 @@ class Harpy::Chain
     loop do
       tip_hash = extended.last.hash
       child = orphan_pool.children_of(tip_hash).find do |block|
-        trial = Harpy::Chain.new(extended + [block])
-        trial.valid?
+        begin
+          trial = Harpy::Chain.new(extended + [block])
+          trial.valid?
+        rescue
+          orphan_pool.remove(block.hash)
+          false
+        end
       end
       break unless child
 
@@ -259,15 +264,23 @@ class Harpy::Chain
 
   private def process_orphan_children!(parent_hash : String, orphan_pool : Harpy::P2p::OrphanPool) : Nil
     loop do
-      child = orphan_pool.children_of(parent_hash).find do |candidate|
+      child = nil
+      orphan_pool.children_of(parent_hash).each do |candidate|
         next false unless candidate.prev_hash == tip.hash
 
-        append!(candidate)
+        begin
+          if append!(candidate)
+            child = candidate
+            break
+          end
+        rescue
+          orphan_pool.remove(candidate.hash)
+        end
       end
       break unless child
 
-      orphan_pool.remove(child.hash)
-      parent_hash = child.hash
+      orphan_pool.remove(child.not_nil!.hash)
+      parent_hash = child.not_nil!.hash
     end
   end
 

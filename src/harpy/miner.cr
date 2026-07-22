@@ -45,9 +45,16 @@ module Harpy
       utxo_set : UtxoSet,
       anchor_root : String = "",
     ) : Block
-      fees = user_txs.sum(0_u64) { |tx| tx.fee(utxo_set) }
+      fees = 0_u64
+      user_txs.each do |tx|
+        next_fees = State.checked_add(fees, tx.fee(utxo_set))
+        raise ArgumentError.new("transaction fees exceed UInt64 capacity") unless next_fees
+        fees = next_fees
+      end
+      reward = State.checked_add(Economics::BLOCK_REWARD, fees)
+      raise ArgumentError.new("block reward plus fees exceed UInt64 capacity") unless reward
       coinbase = CoinbaseTx.new(
-        outputs: [TxOutput.new(Economics::BLOCK_REWARD + fees, miner_pubkey)],
+        outputs: [TxOutput.new(reward, miner_pubkey)],
         height: (previous.index + 1).to_u32,
       )
 

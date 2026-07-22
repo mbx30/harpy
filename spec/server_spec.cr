@@ -145,7 +145,14 @@ describe "GET /proof/:index/:txid" do
     header = Harpy::BlockHeader.from_json(parsed["header"].to_json)
     proof = Array(Harpy::Merkle::ProofStep).from_json(parsed["merkle_proof"].to_json)
 
-    Harpy::Spv.verify_inclusion(coinbase_txid, proof, [header], header.hash).should be_true
+    Harpy::Spv.verify_inclusion(
+      coinbase_txid,
+      proof,
+      [header],
+      header.index,
+      header.hash,
+      header.hash,
+    ).should be_true
   end
 
   it "404s for a txid not in the block" do

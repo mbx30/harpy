@@ -13,6 +13,7 @@ module Harpy
       MAX_BLOCK_REQUESTS_PER_WINDOW =  10
       MAX_BLOCK_BYTES_PER_REQUEST   = 2 * 1024 * 1024
       MAX_BLOCK_BYTES_PER_WINDOW    = 8 * 1024 * 1024
+      MAX_SYNC_CONTROLS_PER_WINDOW  = 2
 
       record InvEvent, at : Time, count : Int32
       record BlockResponseEvent, at : Time, bytes : Int32
@@ -21,7 +22,25 @@ module Harpy
         @scores = {} of String => Int32
         @inv_events = {} of String => Array(InvEvent)
         @block_response_events = {} of String => Array(BlockResponseEvent)
+        @sync_control_events = {} of String => Array(Time)
         @mutex = Mutex.new
+      end
+
+      def record_sync_control(peer_id : String, now : Time = Time.utc) : Bool
+        @mutex.synchronize do
+          window = @sync_control_events[peer_id]? || [] of Time
+          window.reject! { |at| (now - at).total_seconds > RATE_WINDOW_SEC }
+
+          if window.size >= MAX_SYNC_CONTROLS_PER_WINDOW
+            penalize_unlocked(peer_id, SPAM_PENALTY)
+            @sync_control_events[peer_id] = window
+            return false
+          end
+
+          window << now
+          @sync_control_events[peer_id] = window
+          true
+        end
       end
 
       def record_block_response(peer_id : String, byte_count : Int32, now : Time = Time.utc) : Bool
