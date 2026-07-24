@@ -41,7 +41,6 @@ module Harpy
           @children.delete(block.prev_hash) if children.empty?
         end
 
-        @children.delete(hash)
         @size -= 1
         block
       end

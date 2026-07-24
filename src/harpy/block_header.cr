@@ -12,6 +12,8 @@ module Harpy
   struct BlockHeader
     include JSON::Serializable
 
+    HASH_DOMAIN = "harpy-block-v3"
+
     getter index : Int32
     getter timestamp : String
     getter merkle_root : String
@@ -19,9 +21,8 @@ module Harpy
     getter difficulty : Int32
     getter nonce : String
     getter hash : String
-    # Commitment to externally-anchored record hashes (MIC-81). Empty when the
-    # block anchors nothing — in that case it is omitted from the hash preimage,
-    # so pre-anchoring block hashes are unchanged (no version bump needed).
+    # Commitment to externally-anchored record hashes (MIC-81). This field is
+    # present in the v3 preimage even when the block anchors nothing.
     getter anchor_root : String
 
     def initialize(
@@ -38,13 +39,14 @@ module Harpy
 
     def computed_hash : String
       io = IO::Memory.new
-      io << "harpy-block-v2\n"
+      io << HASH_DOMAIN << '\n'
       io << "index:" << @index << '\n'
       append_hash_field(io, "timestamp", @timestamp)
       append_hash_field(io, "merkle_root", @merkle_root)
       append_hash_field(io, "prev_hash", @prev_hash)
+      io << "difficulty:" << @difficulty << '\n'
       append_hash_field(io, "nonce", @nonce)
-      append_hash_field(io, "anchor_root", @anchor_root) unless @anchor_root.empty?
+      append_hash_field(io, "anchor_root", @anchor_root)
 
       Digest::SHA256.hexdigest(io.to_s)
     end
@@ -58,7 +60,7 @@ module Harpy
     end
 
     def pow_valid? : Bool
-      return false if @difficulty < 0
+      return false unless Difficulty.valid_difficulty?(@difficulty)
 
       @hash.starts_with?("0" * @difficulty)
     end

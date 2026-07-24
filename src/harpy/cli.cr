@@ -28,6 +28,9 @@ module Harpy
         print_usage(io)
         1
       end
+    rescue ex : ConfigError
+      io.puts "configuration error: #{ex.message}"
+      1
     end
 
     # export-chain --path <file> [--out <file>]: read the chain and write its

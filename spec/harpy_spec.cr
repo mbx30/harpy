@@ -22,6 +22,27 @@ describe Harpy::Block do
     Harpy::Block.new(0, "2026-01-01", Harpy::Block.genesis(difficulty: 0).transactions, "", -1, "0", "abc").pow_valid?.should be_false
   end
 
+  it "rejects attacker-sized positive difficulty before building a PoW prefix" do
+    transactions = Harpy::Block.genesis(difficulty: 0).transactions
+    draft = Harpy::Block.new(0, "2026-01-01 00:00:00 UTC", transactions, "", Int32::MAX, "0")
+    block = Harpy::Block.new(
+      draft.index,
+      draft.timestamp,
+      draft.transactions,
+      draft.prev_hash,
+      draft.difficulty,
+      draft.nonce,
+      draft.computed_hash,
+      draft.merkle_root,
+    )
+
+    block.hash_matches?.should be_true
+    block.pow_valid?.should be_false
+    block.header.pow_valid?.should be_false
+    Harpy::Chain.new([block]).block_structure_valid?(block).should be_false
+    expect_raises(ArgumentError) { Harpy::Miner.mine(block) }
+  end
+
   it "commits to merkle_root injectively in the hash preimage" do
     genesis = Harpy::Block.genesis(difficulty: 0)
     other = Harpy::Block.new(0, genesis.timestamp, genesis.transactions, "", 0, "x", "", "different" * 8)
@@ -76,9 +97,8 @@ describe Harpy::Block do
     tampered.valid_against?(genesis, chain.utxo_set, expected).should be_false
   end
 
-  it "accepts a child block with the same timestamp as its parent" do
+  it "rejects a child block with the same timestamp as its parent" do
     genesis = Harpy::SpecHelpers.mined_genesis
-    expected = Harpy::Difficulty.required_for_block([genesis])
     coinbase = Harpy::CoinbaseTx.new(
       outputs: [Harpy::TxOutput.new(Harpy::Economics::BLOCK_REWARD, Harpy::Economics.genesis_pubkey)],
       height: 1_u32,
@@ -88,12 +108,11 @@ describe Harpy::Block do
     )
 
     chain = Harpy::Chain.new([genesis])
-    same_time.valid_against?(genesis, chain.utxo_set, expected).should be_true
+    chain.append!(same_time).should be_false
   end
 
   it "rejects a child block with a timestamp before its parent" do
     genesis = Harpy::SpecHelpers.mined_genesis
-    expected = Harpy::Difficulty.required_for_block([genesis])
     coinbase = Harpy::CoinbaseTx.new(
       outputs: [Harpy::TxOutput.new(Harpy::Economics::BLOCK_REWARD, Harpy::Economics.genesis_pubkey)],
       height: 1_u32,
@@ -103,7 +122,7 @@ describe Harpy::Block do
     )
 
     chain = Harpy::Chain.new([genesis])
-    backdated.valid_against?(genesis, chain.utxo_set, expected).should be_false
+    chain.append!(backdated).should be_false
   end
 end
 
@@ -144,12 +163,12 @@ describe Harpy::Chain do
 
   it "replaces the chain only with a valid candidate that has more cumulative work" do
     chain = Harpy::SpecHelpers.build_chain(2)
-    longer = Harpy::SpecHelpers.build_chain(3)
+    longer = Harpy::SpecHelpers.extend_fork_from(chain.blocks.first, 3, "longer")
 
     chain.replace_if_more_work_valid!(longer.blocks).should be_true
     chain.height.should eq(3)
 
-    shorter = Harpy::SpecHelpers.build_chain(2)
+    shorter = Harpy::SpecHelpers.extend_fork_from(chain.blocks.first, 2, "shorter")
     chain.replace_if_more_work_valid!(shorter.blocks).should be_false
     chain.height.should eq(3)
   end
@@ -219,6 +238,7 @@ describe Harpy::Storage do
     begin
       Harpy::Storage.save(chain, path)
       parsed = JSON.parse(File.read(path))
+      parsed["format_version"].as_i.should eq(Harpy::Storage::FORMAT_VERSION)
       parsed["checksum"].as_s.size.should eq(64)
       parsed["blocks"].as_a.size.should eq(2)
     ensure
@@ -231,7 +251,7 @@ describe Harpy::Storage do
     chain = Harpy::SpecHelpers.build_chain(2)
 
     begin
-      forged = Harpy::Storage::Envelope.new("0" * 64, chain.blocks)
+      forged = Harpy::Storage::Envelope.new(Harpy::Storage::FORMAT_VERSION, "0" * 64, chain.blocks)
       File.write(path, forged.to_json)
 
       expect_raises Harpy::StorageError do
@@ -242,16 +262,62 @@ describe Harpy::Storage do
     end
   end
 
-  it "loads a legacy bare-array chain file without a checksum envelope" do
+  it "rejects a legacy bare-array chain file with the v3 reset message" do
     path = File.tempname
     chain = Harpy::SpecHelpers.build_chain(2)
 
     begin
       File.write(path, chain.blocks.to_json)
 
-      loaded = Harpy::Storage.load(path)
-      loaded.should_not be_nil
-      loaded.not_nil!.blocks.to_json.should eq(chain.blocks.to_json)
+      error = expect_raises Harpy::StorageError do
+        Harpy::Storage.load(path)
+      end
+      error.message.not_nil!.should contain("reset chain data")
+    ensure
+      File.delete?(path) if File.exists?(path)
+    end
+  end
+
+  it "rejects a v2 checksum envelope with the v3 reset message" do
+    path = File.tempname
+    chain = Harpy::SpecHelpers.build_chain(2)
+
+    begin
+      legacy = {
+        "format_version" => 2,
+        "checksum"       => Digest::SHA256.hexdigest(chain.blocks.to_json),
+        "blocks"         => JSON.parse(chain.blocks.to_json),
+      }
+      File.write(path, legacy.to_json)
+
+      error = expect_raises Harpy::StorageError do
+        Harpy::Storage.load(path)
+      end
+      error.message.not_nil!.should contain("harpy-block-v3")
+      error.message.not_nil!.should contain("reset chain data")
+    ensure
+      File.delete?(path) if File.exists?(path)
+    end
+  end
+
+  it "rejects a stored genesis with attacker-sized difficulty without allocating its prefix" do
+    path = File.tempname
+    draft = Harpy::Block.genesis(timestamp: "2026-01-01 00:00:00 UTC", difficulty: Int32::MAX)
+    hostile = Harpy::Block.new(
+      draft.index,
+      draft.timestamp,
+      draft.transactions,
+      draft.prev_hash,
+      draft.difficulty,
+      draft.nonce,
+      draft.computed_hash,
+      draft.merkle_root,
+      draft.anchor_root,
+    )
+
+    begin
+      File.write(path, Harpy::Storage::Envelope.wrap([hostile]).to_json)
+      expect_raises(Harpy::StorageError) { Harpy::Storage.load_or_genesis(path) }
     ensure
       File.delete?(path) if File.exists?(path)
     end
@@ -272,7 +338,7 @@ describe Harpy::Difficulty do
       )
     end
 
-    Harpy::Difficulty.retarget(blocks).should be > 2
+    Harpy::Difficulty.retarget(blocks).should eq(3)
   end
 
   it "decreases difficulty when blocks arrive slower than the target interval" do
@@ -288,6 +354,74 @@ describe Harpy::Difficulty do
       )
     end
 
-    Harpy::Difficulty.retarget(blocks).should be < 3
+    Harpy::Difficulty.retarget(blocks).should eq(2)
+  end
+
+  it "uses the nine intervals represented by ten blocks and changes by at most one" do
+    txs = Harpy::Block.genesis(difficulty: 0).transactions
+    base = Time.utc(2026, 1, 1)
+    build_window = ->(span_seconds : Int32, difficulty : Int32) do
+      (0...10).map do |index|
+        offset = (span_seconds * index) // 9
+        Harpy::Block.new(
+          index,
+          (base + offset.seconds).to_s(Harpy::Difficulty::TIMESTAMP_FORMAT),
+          txs,
+          "",
+          difficulty,
+        )
+      end
+    end
+
+    Harpy::Difficulty.retarget(build_window.call(269, 3)).should eq(4)
+    Harpy::Difficulty.retarget(build_window.call(270, 3)).should eq(3)
+    Harpy::Difficulty.retarget(build_window.call(1080, 3)).should eq(3)
+    Harpy::Difficulty.retarget(build_window.call(1081, 3)).should eq(2)
+    Harpy::Difficulty.retarget(build_window.call(1, 8)).should eq(8)
+    Harpy::Difficulty.retarget(build_window.call(5000, 0)).should eq(0)
+  end
+
+  it "requires timestamps strictly above the median of the previous eleven blocks" do
+    txs = Harpy::Block.genesis(difficulty: 0).transactions
+    base = Time.utc(2026, 1, 1)
+    ancestors = (1..11).map do |seconds|
+      Harpy::Block.new(
+        seconds - 1,
+        (base + seconds.seconds).to_s(Harpy::Difficulty::TIMESTAMP_FORMAT),
+        txs,
+        "",
+        0,
+      )
+    end
+    now = base + 1.day
+
+    Harpy::Difficulty.valid_timestamp?(
+      (base + 6.seconds).to_s(Harpy::Difficulty::TIMESTAMP_FORMAT),
+      ancestors,
+      now,
+    ).should be_false
+    Harpy::Difficulty.valid_timestamp?(
+      (base + 7.seconds).to_s(Harpy::Difficulty::TIMESTAMP_FORMAT),
+      ancestors,
+      now,
+    ).should be_true
+  end
+
+  it "accepts exactly two hours of future drift and rejects anything later" do
+    txs = Harpy::Block.genesis(difficulty: 0).transactions
+    now = Time.utc(2026, 1, 1, 12, 0, 0)
+    ancestor_time = now - 1.minute
+    ancestors = [Harpy::Block.new(0, ancestor_time.to_s(Harpy::Difficulty::TIMESTAMP_FORMAT), txs, "", 0)]
+
+    Harpy::Difficulty.valid_timestamp?(
+      (now + 2.hours).to_s(Harpy::Difficulty::TIMESTAMP_FORMAT),
+      ancestors,
+      now,
+    ).should be_true
+    Harpy::Difficulty.valid_timestamp?(
+      (now + 2.hours + 1.second).to_s(Harpy::Difficulty::TIMESTAMP_FORMAT),
+      ancestors,
+      now,
+    ).should be_false
   end
 end

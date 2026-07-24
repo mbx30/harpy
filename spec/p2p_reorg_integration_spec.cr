@@ -77,3 +77,115 @@ describe "3-node reorg integration" do
     end
   end
 end
+
+describe "P2P reconnect synchronization" do
+  it "retries startup races and catches up ancestor-first beyond orphan capacity" do
+    base = 9650 + Random.rand(40)
+    source_path = File.tempname
+    lagging_path = File.tempname
+    networks = [] of Harpy::P2p::Network
+
+    begin
+      source_chain = Harpy::SpecHelpers.build_chain(155)
+      lagging_chain = Harpy::Chain.new([source_chain.blocks.first])
+      Harpy::Storage.save(source_chain, source_path)
+      Harpy::Storage.save(lagging_chain, lagging_path)
+
+      lagging = Harpy::SpecHelpers.with_env("HARPY_P2P_PEERS", "127.0.0.1:#{base}") do
+        network = Harpy::P2p::Network.new(
+          lagging_chain,
+          lagging_path,
+          base + 1,
+          outbound_retry_delay: 50.milliseconds,
+        )
+        network.start
+        network
+      end
+      networks << lagging
+
+      # The first outbound attempt must fail; the retry loop connects after the
+      # source listener appears.
+      sleep 150.milliseconds
+      source = Harpy::P2p::Network.new(source_chain, source_path, base)
+      source.start
+      networks << source
+
+      400.times do
+        break if lagging.chain.height == source_chain.height && lagging.chain.tip.hash == source_chain.tip.hash
+        sleep 50.milliseconds
+      end
+
+      lagging.chain.height.should eq(155)
+      lagging.chain.tip.hash.should eq(source_chain.tip.hash)
+      lagging.chain.valid?.should be_true
+      lagging.orphan_pool.size.should eq(0)
+    ensure
+      networks.each(&.stop)
+      File.delete?(source_path) if File.exists?(source_path)
+      File.delete?(lagging_path) if File.exists?(lagging_path)
+    end
+  end
+
+  it "negotiates a common ancestor for a fork diverged by more than 100 blocks" do
+    base = 9250 + Random.rand(40)
+    source_path = File.tempname
+    local_path = File.tempname
+    networks = [] of Harpy::P2p::Network
+
+    begin
+      genesis = Harpy::Miner.mine(
+        Harpy::Block.genesis(
+          timestamp: (Time.utc - 6.hours).to_s(Harpy::Difficulty::TIMESTAMP_FORMAT),
+          difficulty: 0,
+        ),
+      )
+      local_key = Harpy::Crypto.pubkey_hex(Harpy::SpecHelpers.generate_keypair[1])
+      source_key = Harpy::Crypto.pubkey_hex(Harpy::SpecHelpers.generate_keypair[1])
+      local_chain = Harpy::SpecHelpers.extend_fork_from(
+        genesis,
+        130,
+        seconds_between: 60,
+        miner_pubkey: local_key,
+      )
+      source_chain = Harpy::SpecHelpers.extend_fork_from(
+        genesis,
+        170,
+        seconds_between: 60,
+        miner_pubkey: source_key,
+      )
+      Harpy::Storage.save(source_chain, source_path)
+      Harpy::Storage.save(local_chain, local_path)
+
+      local = Harpy::SpecHelpers.with_env("HARPY_P2P_PEERS", "127.0.0.1:#{base}") do
+        network = Harpy::P2p::Network.new(
+          local_chain,
+          local_path,
+          base + 1,
+          outbound_retry_delay: 50.milliseconds,
+        )
+        network.start
+        network
+      end
+      networks << local
+
+      sleep 150.milliseconds
+      source = Harpy::P2p::Network.new(source_chain, source_path, base)
+      source.start
+      networks << source
+
+      400.times do
+        break if local.chain.height == source_chain.height && local.chain.tip.hash == source_chain.tip.hash
+        sleep 50.milliseconds
+      end
+
+      local.chain.height.should eq(170)
+      local.chain.tip.hash.should eq(source_chain.tip.hash)
+      local.chain.valid?.should be_true
+      local.orphan_pool.size.should eq(0)
+    ensure
+      networks.each(&.stop)
+      File.delete?(source_path) if File.exists?(source_path)
+      File.delete?(local_path) if File.exists?(local_path)
+    end
+  end
+end

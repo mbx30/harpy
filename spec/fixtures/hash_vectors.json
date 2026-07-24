@@ -1,11 +1,13 @@
 [
   {
-    "description": "genesis coinbase block (harpy-block-v2, merkle_root era)",
+    "description": "genesis coinbase block (harpy-block-v3)",
     "index": 0,
     "timestamp": "2026-07-03 17:30:00 UTC",
     "merkle_root": "9feb3bdbb10c1b4fe4331780b943a3dae454e51fd74bdf47ea37140c5f4cecc7",
     "prev_hash": "",
+    "difficulty": 0,
     "nonce": "0",
-    "expected_hash": "3f9e1dfc2a965ba7387023421bf430e15df484b57030fabd02bdec1a06ad3911"
+    "anchor_root": "",
+    "expected_hash": "cd9e7fb5b0aaac3e15bc015e842f3545390f292782726e1779a78f6232359ae9"
   }
 ]

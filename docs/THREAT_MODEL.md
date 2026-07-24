@@ -112,9 +112,13 @@ Tune with `HARPY_RATE_LIMIT` (default `2`) and `HARPY_RATE_LIMIT_WINDOW` (defaul
 
 **Attack:** Skew timestamps to affect difficulty retargeting.
 
-**Mitigations:** Monotonic timestamp rule (`Block#valid_against?`); retargeting uses observed window ([MIC-58](https://linear.app/mbx2/issue/MIC-58)).
+**Mitigations:** Timestamps must be strictly greater than the median of the
+previous 11 blocks and no more than two hours ahead of the validation clock.
+Retargeting measures the nine intervals represented by ten blocks and changes
+difficulty by at most one level per retarget.
 
-**Residual risk:** No median-time-past or drift bounds.
+**Residual risk:** Coordinated miners can still influence timestamps within the
+accepted window, as in other timestamp-based PoW designs.
 
 ### 5. Disk tampering and persistence failures (storage)
 
@@ -128,7 +132,8 @@ Tune with `HARPY_RATE_LIMIT` (default `2`) and `HARPY_RATE_LIMIT_WINDOW` (defaul
 
 **Attack:** Alter header fields without redoing PoW.
 
-**Mitigations:** Length-prefixed `harpy-block-v2` preimage with `merkle_root`; cumulative work saturates safely.
+**Mitigations:** Length-prefixed `harpy-block-v3` preimage commits
+`merkle_root`, `difficulty`, and `anchor_root`; cumulative work saturates safely.
 
 ### 7. Sybil identity flood (network)
 

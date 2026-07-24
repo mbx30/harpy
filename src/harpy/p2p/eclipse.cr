@@ -67,7 +67,9 @@ module Harpy
       getter anchor_peers : Array(String)
 
       def initialize(anchor_peers : Array(String) = [] of String)
-        @anchor_peers = anchor_peers.first(ANCHOR_SLOTS)
+        @anchor_peers = anchor_peers.first(ANCHOR_SLOTS).map do |address|
+          address.includes?(':') ? address.split(':').first : address
+        end
         @subnet_counts = Hash(String, Int32).new
         @last_feeler_at = Time.utc
       end

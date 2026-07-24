@@ -92,6 +92,45 @@ describe "GET /header/:index and /headers" do
   end
 end
 
+describe "numeric route validation" do
+  invalid_index_paths = [
+    "/block/nope",
+    "/block/-1",
+    "/header/nope",
+    "/header/-1",
+    "/proof/nope/#{"ab" * 32}",
+    "/proof/-1/#{"ab" * 32}",
+  ]
+
+  invalid_index_paths.each do |path|
+    it "returns JSON 400 for #{path}" do
+      response = harpy_test_response("GET", path)
+
+      response.status_code.should eq(400)
+      response.headers["Content-Type"]?.should eq("application/json")
+      JSON.parse(response.body)["error"].as_s.should contain("non-negative integer")
+    end
+  end
+
+  invalid_header_ranges = [
+    "/headers?from=nope",
+    "/headers?to=nope",
+    "/headers?from=-1",
+    "/headers?to=-1",
+    "/headers?from=2&to=1",
+  ]
+
+  invalid_header_ranges.each do |path|
+    it "returns JSON 400 for #{path}" do
+      response = harpy_test_response("GET", path)
+
+      response.status_code.should eq(400)
+      response.headers["Content-Type"]?.should eq("application/json")
+      JSON.parse(response.body)["error"].as_s.should contain("header range")
+    end
+  end
+end
+
 describe "GET /proof/:index/:txid" do
   it "returns a header + merkle proof that verifies via SPV" do
     # Fresh chain has a genesis coinbase; fetch its txid from the block.
@@ -106,7 +145,14 @@ describe "GET /proof/:index/:txid" do
     header = Harpy::BlockHeader.from_json(parsed["header"].to_json)
     proof = Array(Harpy::Merkle::ProofStep).from_json(parsed["merkle_proof"].to_json)
 
-    Harpy::Spv.verify_inclusion(coinbase_txid, proof, header).should be_true
+    Harpy::Spv.verify_inclusion(
+      coinbase_txid,
+      proof,
+      [header],
+      header.index,
+      header.hash,
+      header.hash,
+    ).should be_true
   end
 
   it "404s for a txid not in the block" do
@@ -164,6 +210,13 @@ describe "POST /mine" do
 
     response.status_code.should eq(401)
     response.body.should eq(%({"error":"unauthorized"}))
+  end
+
+  it "rejects a non-hex miner public key" do
+    response = harpy_test_response("POST", "/mine", %({"miner_pubkey":"#{"z" * 64}"}))
+
+    response.status_code.should eq(400)
+    JSON.parse(response.body)["error"].as_s.should contain("lowercase hex")
   end
 end
 

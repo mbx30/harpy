@@ -167,4 +167,16 @@ describe "transaction security" do
 
     chain.mempool.add(tx, chain.utxo_set, chain.height.to_u32).should eq(Harpy::Mempool::AddResult::Invalid)
   end
+
+  it "rejects a transaction output with a malformed public key" do
+    chain, miner_key, _ = Harpy::TransactionSecuritySpecHelpers.mature_chain_with_miner
+    coinbase = chain.blocks.first.transactions.first.as(Harpy::CoinbaseTx)
+    outpoint = Harpy::OutPoint.new(coinbase.txid, 0_u32)
+    tx = Harpy::Transaction.new(
+      inputs: [Harpy::TxInput.new(outpoint)],
+      outputs: [Harpy::TxOutput.new(Harpy::Economics::BLOCK_REWARD - Harpy::Economics::MIN_TX_FEE, "z" * 64)],
+    ).sign_all(miner_key)
+
+    chain.mempool.add(tx, chain.utxo_set, chain.height.to_u32).should eq(Harpy::Mempool::AddResult::Invalid)
+  end
 end

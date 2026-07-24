@@ -172,10 +172,12 @@ Specs use `difficulty: 0` in helpers so mining finishes instantly. Hash vectors:
 
 ### Validation rules exercised in tests
 
-- Hash matches `computed_hash` (length-prefixed `harpy-block-v2` over index, timestamp, `merkle_root`, `prev_hash`, nonce)
+- Hash matches `computed_hash` (length-prefixed `harpy-block-v3` over index,
+  timestamp, `merkle_root`, `prev_hash`, difficulty, nonce, and `anchor_root`)
 - PoW prefix matches `difficulty`
 - Linkage: `index` increments; `prev_hash` matches parent
-- Timestamps: child ≥ parent (monotonic)
+- Timestamps: child is strictly above median-time-past (11 blocks) and no more
+  than two hours ahead of the validation clock
 - Transactions: Ed25519 signatures, UTXO balance, `MIN_TX_FEE` floor
 
 ## 13. Research context

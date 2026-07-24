@@ -41,6 +41,8 @@ src/
     block.cr            # Block struct, SHA-256 hashing, validation
     chain.cr            # In-memory chain, UTXO replay, fork replacement
     miner.cr            # Proof-of-work mining loop
+    vm.cr               # Minimal stack VM with gas metering (MIC-64)
+    mine_jobs.cr        # Async mining job queue: 202 + job id (MIC-44)
     storage.cr          # JSON load/save, genesis bootstrap
     config.cr           # Env config, size limits, write auth
     rate_limit.cr       # Per-IP token bucket on POST /mine and /tx
@@ -67,7 +69,8 @@ spec/                   # Tests + fixtures/hash_vectors.json
 | `GET` | `/block/:index` | Single block by index |
 | `GET` | `/mempool` | Pending transactions |
 | `POST` | `/tx` | Body: signed `Transaction` JSON — validates and admits to mempool |
-| `POST` | `/mine` | Body: `{ "miner_pubkey": "..." }` — mines coinbase + mempool txs |
+| `POST` | `/mine` | Body: `{ "miner_pubkey": "..." }` — mines coinbase + mempool txs. Add `"async": true` for 202 + job id (MIC-44) |
+| `GET` | `/mine-jobs/:id` | Poll an async mining job: state (`queued`/`running`/`done`/`failed`), block or error |
 
 `POST /tx` responses:
 
@@ -84,12 +87,14 @@ spec/                   # Tests + fixtures/hash_vectors.json
 
 | Status | Condition |
 |--------|-----------|
-| 200 | Block mined and appended |
+| 200 | Block mined and appended (synchronous mode) |
+| 202 | `"async": true` — job accepted; poll `/mine-jobs/:id` |
 | 400 | Missing/invalid `miner_pubkey` |
 | 401 | `HARPY_API_KEY` set but request lacks valid credentials |
 | 413 | JSON body exceeds 64 KiB |
 | 422 | Mined block rejected by chain validation |
 | 429 | Per-IP rate limit exceeded |
+| 503 | Async mining queue full (`Harpy::MineJobs::MAX_QUEUE`) |
 
 Default PoW difficulty: **3** leading zero hex digits (`Harpy::Block::DEFAULT_DIFFICULTY`). Override at genesis with `HARPY_DIFFICULTY` (see `docs/DEMO.md`). Difficulty retargets every 10 blocks toward a 60-second target interval.
 
@@ -104,6 +109,7 @@ Default PoW difficulty: **3** leading zero hex digits (`Harpy::Block::DEFAULT_DI
 | `HARPY_RATE_LIMIT_WINDOW` | `10` | Refill interval in seconds for the token bucket |
 | `HARPY_TRUST_PROXY` | unset | When truthy, trust `X-Forwarded-For` for client identity (set only behind a trusted reverse proxy) |
 | `HARPY_GENESIS_PUBKEY` | tutorial default | Ed25519 pubkey hex for genesis coinbase output |
+| `HARPY_GENESIS_TIMESTAMP` | `2026-07-20 00:00:00 UTC` | Deterministic v3 genesis timestamp shared by peers |
 | `HARPY_BIND_HOST` | `127.0.0.1` | HTTP bind address (`0.0.0.0` to expose on LAN) |
 | `HARPY_HTTP_PORT` / `PORT` | `3000` | HTTP API port |
 | `HARPY_P2P_DISABLE` | unset | Set to `1` to disable P2P |
@@ -115,13 +121,15 @@ Rate limiting applies to `POST /mine` and `POST /tx`. Client identity uses the f
 
 ### Hash serialization
 
-`Block#computed_hash` SHA-256 digests a canonical, **length-prefixed** encoding (domain tag `harpy-block-v2`) of `index`, `timestamp`, `merkle_root`, `prev_hash`, and `nonce` — each variable field prefixed by its byte length. **`difficulty` is not included.** Transaction bodies are committed via `merkle_root` only. Pinned vectors: `spec/fixtures/hash_vectors.json`.
+`Block#computed_hash` SHA-256 digests a canonical, **length-prefixed** encoding (domain tag `harpy-block-v3`) of `index`, `timestamp`, `merkle_root`, `prev_hash`, `difficulty`, `nonce`, and `anchor_root` — each variable field prefixed by its byte length. `anchor_root` is committed even when empty. Transaction bodies are committed via `merkle_root` only. Pinned vectors: `spec/fixtures/hash_vectors.json`.
 
 Transaction `txid` and signing digest: SHA-256 over canonical JSON of `version`, `inputs` (without signatures), `outputs` (keys sorted lexicographically).
 
 ### Validation
 
-Blocks must satisfy linkage, PoW prefix, hash integrity, and **monotonic timestamps** (child ≥ parent).
+Blocks must satisfy linkage, PoW prefix, hash integrity, expected difficulty,
+and timestamps strictly greater than the median of the previous 11 blocks and
+no more than two hours ahead of the validation clock.
 
 Fork replacement (`Chain#replace_if_more_work_valid!`) compares **cumulative PoW work** — each block contributes `16^difficulty` (`Block#work`) — not block count alone. Threat model: `docs/THREAT_MODEL.md`. Selfish-mining thresholds: `docs/SELFISH_MINING.md`. Confirmation depth: `docs/CONFIRMATION_DEPTH.md`. Finality model: `docs/FINALITY.md`.
 

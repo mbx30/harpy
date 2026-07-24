@@ -37,14 +37,16 @@ class Harpy::Chain
     end
   end
 
-  def valid? : Bool
+  def valid?(now : Time = Time.utc) : Bool
     return true if @blocks.empty?
 
     genesis = @blocks.first
     return false unless genesis.index == 0
     return false unless genesis.prev_hash.empty?
     return false unless genesis.hash_matches?
+    return false unless Harpy::Difficulty.valid_difficulty?(genesis.difficulty)
     return false unless genesis.pow_valid?
+    return false unless Harpy::Difficulty.valid_genesis_timestamp?(genesis.timestamp, now)
     return false unless genesis.transactions_within_limit?
 
     working = Harpy::UtxoSet.new
@@ -56,6 +58,7 @@ class Harpy::Chain
       else
         ancestors = @blocks[0...index]
         expected = Harpy::Difficulty.required_for_block(ancestors)
+        return false unless Harpy::Difficulty.valid_timestamp?(block.timestamp, ancestors, now)
         return false unless block.valid_against?(@blocks[index - 1], working, expected)
         Harpy::State.apply_block(block, working)
       end
@@ -64,10 +67,11 @@ class Harpy::Chain
     true
   end
 
-  def append!(block : Harpy::Block) : Bool
+  def append!(block : Harpy::Block, now : Time = Time.utc) : Bool
     return false if @blocks.empty?
 
     expected = next_difficulty
+    return false unless Harpy::Difficulty.valid_timestamp?(block.timestamp, @blocks, now)
     return false unless block.valid_against?(tip, @utxo_set, expected)
 
     undo = Harpy::State.apply_block(block, @utxo_set)
@@ -160,12 +164,16 @@ class Harpy::Chain
   end
 
   def block_structure_valid?(block : Harpy::Block) : Bool
-    block.hash_matches? && block.pow_valid? && block.transactions_within_limit?
+    block.hash_matches? &&
+      block.pow_valid? &&
+      block.transactions_within_limit? &&
+      Harpy::State.block_transactions_structurally_valid?(block)
   end
 
   # Attempt to connect a block to the chain or store it as an orphan.
   def accept_block!(block : Harpy::Block, orphan_pool : Harpy::P2p::OrphanPool) : BlockAcceptResult
     return BlockAcceptResult::AlreadyHave if has_block?(block.hash)
+    return BlockAcceptResult::AlreadyHave if orphan_pool.has?(block.hash)
     return BlockAcceptResult::Rejected unless block_structure_valid?(block)
 
     if block.prev_hash == tip.hash
@@ -185,8 +193,7 @@ class Harpy::Chain
         return BlockAcceptResult::Reorganized
       end
 
-      orphan_pool.add(block)
-      return BlockAcceptResult::Orphaned
+      return orphan_pool.add(block) ? BlockAcceptResult::Orphaned : BlockAcceptResult::Rejected
     end
 
     if candidate = candidate_from_orphan_parent(block, orphan_pool)
@@ -200,7 +207,8 @@ class Harpy::Chain
       end
     end
 
-    orphan_pool.add(block)
+    return BlockAcceptResult::Rejected unless orphan_pool.add(block)
+
     process_orphan_children!(tip.hash, orphan_pool)
     BlockAcceptResult::Orphaned
   end
@@ -239,8 +247,13 @@ class Harpy::Chain
     loop do
       tip_hash = extended.last.hash
       child = orphan_pool.children_of(tip_hash).find do |block|
-        trial = Harpy::Chain.new(extended + [block])
-        trial.valid?
+        begin
+          trial = Harpy::Chain.new(extended + [block])
+          trial.valid?
+        rescue
+          orphan_pool.remove(block.hash)
+          false
+        end
       end
       break unless child
 
@@ -251,15 +264,23 @@ class Harpy::Chain
 
   private def process_orphan_children!(parent_hash : String, orphan_pool : Harpy::P2p::OrphanPool) : Nil
     loop do
-      child = orphan_pool.children_of(parent_hash).find do |candidate|
+      child = nil
+      orphan_pool.children_of(parent_hash).each do |candidate|
         next false unless candidate.prev_hash == tip.hash
 
-        append!(candidate)
+        begin
+          if append!(candidate)
+            child = candidate
+            break
+          end
+        rescue
+          orphan_pool.remove(candidate.hash)
+        end
       end
       break unless child
 
-      orphan_pool.remove(child.hash)
-      parent_hash = child.hash
+      orphan_pool.remove(child.not_nil!.hash)
+      parent_hash = child.not_nil!.hash
     end
   end
 
@@ -276,11 +297,15 @@ class Harpy::Chain
   end
 
   def self.genesis_chain(
-    miner_pubkey : String = Harpy::Economics.genesis_pubkey,
+    miner_pubkey : String = Harpy::Config.genesis_pubkey,
     difficulty : Int32 = Harpy::Block::DEFAULT_DIFFICULTY,
+    timestamp : String = Harpy::Config.genesis_timestamp,
     verbose : Bool = false,
   ) : Harpy::Chain
-    genesis = Harpy::Miner.mine(Harpy::Block.genesis(miner_pubkey: miner_pubkey, difficulty: difficulty), verbose: verbose)
+    genesis = Harpy::Miner.mine(
+      Harpy::Block.genesis(miner_pubkey: miner_pubkey, timestamp: timestamp, difficulty: difficulty),
+      verbose: verbose,
+    )
     new([genesis])
   end
 end

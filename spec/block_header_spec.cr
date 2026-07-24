@@ -39,4 +39,31 @@ describe Harpy::BlockHeader do
 
     tampered.hash_matches?.should be_false
   end
+
+  it "detects difficulty and anchor-root tampering" do
+    block = Harpy::SpecHelpers.build_chain(2).blocks.last
+    changed_difficulty = Harpy::BlockHeader.new(
+      block.index,
+      block.timestamp,
+      block.merkle_root,
+      block.prev_hash,
+      block.difficulty + 1,
+      block.nonce,
+      block.hash,
+      block.anchor_root,
+    )
+    changed_anchor = Harpy::BlockHeader.new(
+      block.index,
+      block.timestamp,
+      block.merkle_root,
+      block.prev_hash,
+      block.difficulty,
+      block.nonce,
+      block.hash,
+      "ab" * 32,
+    )
+
+    changed_difficulty.hash_matches?.should be_false
+    changed_anchor.hash_matches?.should be_false
+  end
 end

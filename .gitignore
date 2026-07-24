@@ -18,6 +18,15 @@
 !/docs/POST_QUANTUM_MIGRATION.md
 !/docs/P2P.md
 !/docs/BRAND.md
+!/docs/CONTRACT_SECURITY_CI.md
+!/docs/SMART_CONTRACT_THREAT_MODEL.md
+!/docs/BRIDGE_THREAT_MODEL.md
+!/docs/BRIDGE_MONITORING.md
+!/docs/ORACLE_PATTERNS.md
+!/docs/LIGHT_CLIENT_BRIDGES.md
+!/docs/L2_SCALING.md
+!/docs/NIPOPOW_EVALUATION.md
+!/docs/TESTNET.md
 /lib/
 /bin/
 /.shards/
@@ -48,3 +57,7 @@ Thumbs.db
 
 # Local tooling
 .claude/settings.local.json
+
+# TLA+ tooling and TLC output
+spec/tla/tla2tools.jar
+spec/tla/states/

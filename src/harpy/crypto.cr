@@ -47,11 +47,15 @@ module Harpy
       verify_key.key_bytes.hexstring
     end
 
+    def valid_pubkey_hex?(value : String) : Bool
+      valid_hex?(value, 64)
+    end
+
     # Encode a public key as a versioned, algorithm-tagged, checksummed address.
     def address_for(pubkey_hex : String, algorithm : String = SIG_ALGORITHM_ED25519) : String
       algo_id = ADDRESS_ALGO_IDS[algorithm]?
       raise ArgumentError.new("unknown signature algorithm: #{algorithm}") unless algo_id
-      raise ArgumentError.new("pubkey must be 64-char hex") unless valid_hex?(pubkey_hex, 64)
+      raise ArgumentError.new("pubkey must be 64-char lowercase hex") unless valid_pubkey_hex?(pubkey_hex)
 
       payload = Bytes[ADDRESS_VERSION, algo_id] + pubkey_hex.hexbytes
       checksum = Digest::SHA256.digest(payload)[0, 4]

@@ -30,7 +30,8 @@ Locally mined blocks (`POST /mine`) are saved to disk and broadcast via `inv` wi
 
 - **Transport:** plain TCP (no TLS in tutorial builds).
 - **Framing:** 4-byte big-endian payload length, then UTF-8 JSON (max **512 KiB** per message).
-- **Version:** `PROTOCOL_VERSION = 1` in handshake messages.
+- **Version:** `PROTOCOL_VERSION = 2`; both handshake directions require an
+  exact version and matching genesis hash.
 
 | Message | Direction | Purpose |
 |---------|-----------|---------|
@@ -38,11 +39,20 @@ Locally mined blocks (`POST /mine`) are saved to disk and broadcast via `inv` wi
 | `handshake_ack` | Both | Acknowledge compatible chain |
 | `inv` | Either | Announce block hash(es) |
 | `getblock` | Either | Request block by hash |
+| `getblocksbyindex` | Either | Request 1-50 consecutive blocks for ancestor-first catch-up |
 | `block` | Response | Full `Block` JSON |
 | `ping` / `pong` | Either | Liveness |
 | `reject` | Response | Block not found or policy rejection |
 
-Handshake **fails** (connection closed) when `genesis_hash` does not match the local chain — nodes on different networks cannot sync.
+Handshake **fails** (connection closed) when the version or `genesis_hash` does
+not match. Handshakes time out after five seconds; steady-state frame reads
+after 60 seconds; writes after ten seconds.
+
+After the handshake, a lagging node requests bounded 50-block ranges in index
+order. Each block is fully validated before connection, and the next range is
+not requested until the current range is complete. This keeps long-range sync
+out of the 100-block orphan pool. Inventory announcements remain limited to 50
+unique lowercase hashes per canonical peer IP in each ten-second window.
 
 ## Fork choice and reorgs
 
@@ -67,7 +77,9 @@ Reorg requires **strictly greater** cumulative work (`16^difficulty` per block).
 | Ban threshold | 10 misbehavior points | 1-hour ban |
 | Max peers per /16 subnet | 2 | `EclipseGuard` bucketing |
 | Anchor peers | 2 slots | `HARPY_ANCHOR_PEERS` bypass subnet cap |
-| Inv rate limit | 50 per 10 s | Reputation penalty on excess |
+| Inv rate limit | 50 hashes per peer per 10 s | Max 50 unique lowercase 64-hex hashes per message |
+| Block response budget | 10 requests and 8 MiB per peer IP per 10 s | Max 2 MiB per request |
+| Sync-control budget | 2 accepted `syncbegin` messages per peer IP per 10 s | Unsolicited sessions are rejected |
 
 `/health` exposes P2P status when enabled:
 
@@ -98,6 +110,7 @@ Reorg requires **strictly greater** cumulative work (`16^difficulty` per block).
 | `HARPY_HTTP_PORT` / `PORT` | `3000` | HTTP API port (use distinct values per local node) |
 | `HARPY_DATA_DIR` | `data/chain.json` | **Must differ per node** on the same host |
 | `HARPY_GENESIS_PUBKEY` | tutorial default | Must match across peers for handshake |
+| `HARPY_GENESIS_TIMESTAMP` | `2026-07-20 00:00:00 UTC` | Must match across peers for deterministic genesis |
 
 P2P binds to `0.0.0.0` regardless of `HARPY_BIND_HOST` (HTTP bind). Firewall P2P ports appropriately on exposed hosts.
 
@@ -124,7 +137,9 @@ HARPY_DIFFICULTY=1 \
 crystal run src/harpy.cr
 ```
 
-Copy the genesis chain from node A before starting B, or use the same `HARPY_GENESIS_PUBKEY` and `HARPY_DIFFICULTY` so both bootstraps produce compatible genesis blocks. In practice, **copy `harpy-a.json` to `harpy-b.json`** before starting B, or mine only on one node and let gossip propagate.
+Use the same `HARPY_GENESIS_PUBKEY`, `HARPY_GENESIS_TIMESTAMP`, and
+`HARPY_DIFFICULTY` so both nodes produce the same genesis. Existing v2 data must
+be deleted; it is never interpreted under v3 rules.
 
 Mine on node A:
 

@@ -1,6 +1,9 @@
 require "http/request"
 require "crypto/subtle"
 
+class Harpy::ConfigError < Exception
+end
+
 module Harpy
   module Config
     extend self
@@ -21,6 +24,8 @@ module Harpy
     DEFAULT_BIND_HOST = "127.0.0.1"
     DEFAULT_HTTP_PORT = 3000
 
+    DEFAULT_GENESIS_TIMESTAMP = "2026-07-20 00:00:00 UTC"
+
     def max_request_body_bytes : Int32
       MAX_REQUEST_BODY_BYTES
     end
@@ -31,8 +36,9 @@ module Harpy
 
     def genesis_difficulty : Int32
       if value = ENV["HARPY_DIFFICULTY"]?
-        parsed = value.to_i
-        return parsed if parsed >= 0
+        if parsed = value.to_i?
+          return parsed if Difficulty.valid_difficulty?(parsed)
+        end
       end
 
       Block::DEFAULT_DIFFICULTY
@@ -48,7 +54,32 @@ module Harpy
     end
 
     def api_key : String?
-      ENV["HARPY_API_KEY"]?
+      value = ENV["HARPY_API_KEY"]?
+      return nil unless value
+      raise ConfigError.new("HARPY_API_KEY must not be empty") if value.strip.empty?
+
+      value
+    end
+
+    def genesis_pubkey : String
+      value = ENV["HARPY_GENESIS_PUBKEY"]? || Economics::DEFAULT_GENESIS_PUBKEY
+      unless Crypto.valid_pubkey_hex?(value)
+        raise ConfigError.new("HARPY_GENESIS_PUBKEY must be a 64-char lowercase hex Ed25519 public key")
+      end
+
+      value
+    end
+
+    def genesis_timestamp(now : Time = Time.utc) : String
+      value = ENV["HARPY_GENESIS_TIMESTAMP"]? || DEFAULT_GENESIS_TIMESTAMP
+      unless Difficulty.parse_timestamp(value)
+        raise ConfigError.new("HARPY_GENESIS_TIMESTAMP must match YYYY-MM-DD HH:MM:SS UTC")
+      end
+      unless Difficulty.valid_genesis_timestamp?(value, now)
+        raise ConfigError.new("HARPY_GENESIS_TIMESTAMP must not be more than two hours in the future")
+      end
+
+      value
     end
 
     def bind_host : String
@@ -57,6 +88,14 @@ module Harpy
       end
 
       DEFAULT_BIND_HOST
+    end
+
+    def validate!(key : String? = api_key) : Nil
+      raise ConfigError.new("HARPY_API_KEY must not be empty") if key.try(&.strip.empty?)
+
+      if key.nil? && !loopback_host?(bind_host)
+        raise ConfigError.new("HARPY_API_KEY is required when HARPY_BIND_HOST is not loopback")
+      end
     end
 
     def http_port : Int32
@@ -135,13 +174,18 @@ module Harpy
     def write_authorized?(request : HTTP::Request, key : String? = api_key) : Bool
       return true unless key
 
+      return false if key.empty?
+
       if auth = request.headers["Authorization"]?
-        token = auth.sub(/^Bearer\s+/i, "")
-        return true if secure_equal?(token, key)
+        if match = auth.match(/\ABearer ([^\s]+)\z/)
+          return true if secure_equal?(match[1], key)
+        end
       end
 
       if header_key = request.headers["X-API-Key"]?
-        return true if secure_equal?(header_key, key)
+        unless header_key.empty?
+          return true if secure_equal?(header_key, key)
+        end
       end
 
       false
@@ -154,6 +198,10 @@ module Harpy
     # is length-safe and does not early-exit.
     private def secure_equal?(a : String, b : String) : Bool
       ::Crypto::Subtle.constant_time_compare(a, b)
+    end
+
+    private def loopback_host?(host : String) : Bool
+      host == "127.0.0.1" || host == "::1" || host == "localhost"
     end
   end
 end

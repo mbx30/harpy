@@ -51,7 +51,7 @@ module Harpy
     end
 
     def pow_valid? : Bool
-      return false if @difficulty < 0
+      return false unless Difficulty.valid_difficulty?(@difficulty)
 
       @hash.starts_with?("0" * @difficulty)
     end
@@ -81,7 +81,6 @@ module Harpy
       return false unless @index == previous.index + 1
       return false unless @prev_hash == previous.hash
       return false unless @difficulty == expected_difficulty
-      return false unless timestamp_not_before?(previous)
       return false unless hash_matches?
       return false unless pow_valid?
       return false unless transactions_within_limit?
@@ -91,23 +90,15 @@ module Harpy
       true
     end
 
-    private def timestamp_not_before?(previous : Block) : Bool
-      self_time = parse_timestamp(@timestamp)
-      prev_time = parse_timestamp(previous.timestamp)
-      self_time >= prev_time
-    rescue Time::Format::Error
-      false
-    end
-
-    private def parse_timestamp(value : String) : Time
-      Time.parse(value, "%Y-%m-%d %H:%M:%S UTC", Time::Location::UTC)
-    end
-
     def self.genesis(
       miner_pubkey : String = Economics.genesis_pubkey,
       timestamp : String = Time.utc.to_s,
       difficulty : Int32 = DEFAULT_DIFFICULTY,
     ) : Block
+      unless Crypto.valid_pubkey_hex?(miner_pubkey)
+        raise ArgumentError.new("miner_pubkey must be a 64-char lowercase hex Ed25519 public key")
+      end
+
       coinbase = CoinbaseTx.new(
         outputs: [TxOutput.new(Economics::BLOCK_REWARD, miner_pubkey)],
         height: 0_u32,

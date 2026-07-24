@@ -13,7 +13,8 @@ module Harpy
 
     Log = ::Log.for("harpy.storage")
 
-    DEFAULT_PATH = "data/chain.json"
+    DEFAULT_PATH   = "data/chain.json"
+    FORMAT_VERSION = 3
 
     # On-disk envelope: a SHA-256 over the canonical `blocks.to_json` alongside
     # the blocks themselves. The checksum lets a backend detect bit-rot,
@@ -22,14 +23,19 @@ module Harpy
     struct Envelope
       include JSON::Serializable
 
+      getter format_version : Int32
       getter checksum : String
       getter blocks : Array(Block)
 
-      def initialize(@checksum : String, @blocks : Array(Block))
+      def initialize(@format_version : Int32, @checksum : String, @blocks : Array(Block))
       end
 
       def self.wrap(blocks : Array(Block)) : Envelope
-        new(Digest::SHA256.hexdigest(blocks.to_json), blocks)
+        new(FORMAT_VERSION, Digest::SHA256.hexdigest(blocks.to_json), blocks)
+      end
+
+      def format_valid? : Bool
+        @format_version == FORMAT_VERSION
       end
 
       def checksum_valid? : Bool
@@ -63,6 +69,9 @@ module Harpy
         chain
       else
         chain = Chain.genesis_chain(difficulty: Config.genesis_difficulty, verbose: verbose)
+        unless chain.valid?
+          raise StorageError.new("configured genesis failed validation")
+        end
         backend.save(chain)
         chain
       end

@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  crystal:
+    name: Format, strict build, and specs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: 1.20.0
+      - run: shards install --production
+      - name: Format check
+        run: crystal tool format --check src spec examples
+      - name: Strict warning build
+        run: crystal build --error-on-warnings src/harpy.cr -o /tmp/harpy-ci
+      - name: All specs
+        run: crystal spec --error-on-warnings --no-color
+
+  container:
+    name: Static image, non-root runtime, and persistence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t harpy-ci:local .
+      - name: Start non-root node with a writable named volume
+        run: |
+          docker volume create harpy-ci-data
+          docker run -d --name harpy-ci-node \
+            -e HARPY_API_KEY=ci-secret \
+            -e HARPY_BIND_HOST=0.0.0.0 \
+            -e HARPY_DIFFICULTY=0 \
+            -e HARPY_P2P_DISABLE=1 \
+            -p 127.0.0.1:3000:3000 \
+            -v harpy-ci-data:/data \
+            harpy-ci:local
+          for attempt in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:3000/health && break
+            sleep 1
+          done
+          test "$(docker exec harpy-ci-node id -u)" != "0"
+          curl -fsS -X POST http://127.0.0.1:3000/mine \
+            -H 'Authorization: Bearer ci-secret' \
+            -H 'Content-Type: application/json' \
+            -d '{"miner_pubkey":"a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"}'
+          docker exec harpy-ci-node test -s /data/chain.json
+          docker restart harpy-ci-node
+          for attempt in $(seq 1 30); do
+            test "$(curl -fsS http://127.0.0.1:3000/validate | jq -r .height)" = "2" && break
+            sleep 1
+          done
+          test "$(curl -fsS http://127.0.0.1:3000/validate | jq -r .height)" = "2"
+      - if: always()
+        run: |
+          docker rm -f harpy-ci-node || true
+          docker volume rm harpy-ci-data || true
+
+  testnet:
+    name: Authenticated three-node gossip and reorg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run authenticated testnet smoke flow
+        env:
+          HARPY_API_KEY: ci-testnet-secret
+          HARPY_COMPOSE_PROJECT: harpy-ci-testnet
+        run: bash scripts/testnet-smoke.sh

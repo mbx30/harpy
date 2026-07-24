@@ -39,17 +39,18 @@ puts "  block hash : #{block.hash}"
 puts "  anchor_root: #{block.anchor_root}"
 puts
 
-# 3. Later, prove line 2 was anchored — using only the header + Merkle proof.
+# 3. Later, prove line 2 was anchored using trusted headers + a Merkle proof.
 target = log_lines[2]
 target_digest = Digest::SHA256.hexdigest(target)
 info = Harpy::Anchor.proof_for(target_digest).not_nil!
 header = chain.block_by_hash(info.block_hash).not_nil!.header
-ok = Harpy::Spv.verify_anchor(target_digest, info.proof, header)
+headers = chain.blocks[0..sealing.index].map(&.header)
+ok = Harpy::Spv.verify_anchor(target_digest, info.proof, headers, chain.genesis_hash)
 puts "verify anchored line 2 => #{ok}"
 
 # 4. A tampered log line no longer verifies against the on-chain commitment.
 tampered_digest = Digest::SHA256.hexdigest(target + " (edited)")
-tampered_ok = Harpy::Spv.verify_anchor(tampered_digest, info.proof, header)
+tampered_ok = Harpy::Spv.verify_anchor(tampered_digest, info.proof, headers, chain.genesis_hash)
 puts "verify tampered line   => #{tampered_ok}  (expected false)"
 
 puts

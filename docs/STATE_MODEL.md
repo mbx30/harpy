@@ -171,35 +171,30 @@ getter merkle_root : String
 
 ---
 
-## 4. Hash serialization breaking change
+## 4. Hash serialization and v3 consensus reset
 
-`Block#computed_hash` today digests a canonical, length-prefixed encoding (domain tag `harpy-block-v2`) of the fields:
-
-```
-index
-timestamp
-data          ← replaced
-prev_hash
-nonce
-```
-
-(Each variable field is prefixed by its byte length; ordering is as shown.)
-
-**Phase 4** replaces `data` with **`merkle_root`** (64-char hex):
+`Block#computed_hash` digests a canonical, length-prefixed encoding with domain
+tag `harpy-block-v3` over these fields in order:
 
 ```
 index
 timestamp
 merkle_root
 prev_hash
+difficulty
 nonce
+anchor_root
 ```
 
-`difficulty` remains **outside** the hash preimage (unchanged from current behavior). `transactions` body is committed via `merkle_root` only — not serialized inline into the hash string.
+Each variable field is prefixed by its UTF-8 byte length. `difficulty` and
+`anchor_root` are consensus commitments; `anchor_root` is included even when
+empty. Transaction bodies are committed through `merkle_root` rather than
+serialized inline.
 
 **Consequences:**
 
-- `spec/fixtures/hash_vectors.json` pins the current `harpy-block-v2` `data`-era preimage; new fixtures are required for transaction-era blocks.
+- `spec/fixtures/hash_vectors.json` pins the `harpy-block-v3` preimage.
+- v2 chain files are intentionally incompatible and must be reset.
 - PoW (`pow_valid?`) is unchanged: hash must start with `difficulty` leading hex zeroes.
 - Any tool that recomputes `computed_hash` must implement canonical merkle root calculation identically.
 

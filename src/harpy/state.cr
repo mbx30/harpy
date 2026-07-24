@@ -11,6 +11,7 @@ module Harpy
       return false unless tx.version == Economics::TX_VERSION
       return false if tx.inputs.empty? || tx.outputs.empty?
       return false if tx.duplicate_inputs?
+      return false unless tx.outputs.all? { |output| Crypto.valid_pubkey_hex?(output.pubkey) }
 
       input_sum = 0_u64
       tx.inputs.each do |input|
@@ -18,10 +19,13 @@ module Harpy
         return false unless entry
         return false unless utxo_set.spendable?(input.prev_out, current_height)
         return false if mempool_spent.includes?(input.prev_out)
-        input_sum += entry.output.amount
+        next_input_sum = checked_add(input_sum, entry.output.amount)
+        return false unless next_input_sum
+        input_sum = next_input_sum
       end
 
-      output_sum = tx.outputs.sum(0_u64, &.amount)
+      output_sum = checked_sum_outputs(tx.outputs)
+      return false unless output_sum
       return false if output_sum > input_sum
 
       fee = input_sum - output_sum
@@ -39,9 +43,12 @@ module Harpy
     ) : Bool
       return false unless coinbase.version == Economics::TX_VERSION
       return false unless coinbase.outputs.size == 1
+      return false unless Crypto.valid_pubkey_hex?(coinbase.outputs.first.pubkey)
       return false unless coinbase.height == block_height
       return false unless coinbase.outputs.first.pubkey == miner_pubkey
-      return false unless coinbase.outputs.first.amount == Economics::BLOCK_REWARD + fees_in_block
+      expected_amount = checked_add(Economics::BLOCK_REWARD, fees_in_block)
+      return false unless expected_amount
+      return false unless coinbase.outputs.first.amount == expected_amount
 
       true
     end
@@ -98,7 +105,7 @@ module Harpy
     end
 
     def validate_block_transactions(block : Block, utxo_set : UtxoSet) : Bool
-      return false if block.transactions.empty?
+      return false unless block_transactions_structurally_valid?(block)
 
       first = block.transactions.first
       return false unless first.is_a?(CoinbaseTx)
@@ -109,7 +116,9 @@ module Harpy
 
       user_txs.each do |tx|
         return false unless validate_tx(tx, working, block.index.to_u32)
-        fees += tx.fee(working)
+        next_fees = checked_add(fees, tx.fee(working))
+        return false unless next_fees
+        fees = next_fees
         apply_tx(tx, working, block.index.to_u32)
       end
 
@@ -118,6 +127,45 @@ module Harpy
       return false unless block.merkle_root == Merkle.root(block.transactions.map(&.txid))
 
       true
+    end
+
+    # Checks transaction shape without needing the parent UTXO set. This is
+    # safe to run before admitting an unknown-parent block to the orphan pool.
+    def block_transactions_structurally_valid?(block : Block) : Bool
+      return false if block.transactions.empty?
+
+      first = block.transactions.first
+      return false unless first.is_a?(CoinbaseTx)
+      return false unless first.version == Economics::TX_VERSION
+      return false unless first.outputs.size == 1
+      return false unless Crypto.valid_pubkey_hex?(first.outputs.first.pubkey)
+
+      block.transactions[1..].each do |entry|
+        return false unless entry.is_a?(Transaction)
+        return false unless entry.version == Economics::TX_VERSION
+        return false if entry.inputs.empty? || entry.outputs.empty?
+        return false if entry.duplicate_inputs?
+        return false unless entry.outputs.all? { |output| Crypto.valid_pubkey_hex?(output.pubkey) }
+        return false unless checked_sum_outputs(entry.outputs)
+      end
+
+      block.merkle_root == Merkle.root(block.transactions.map(&.txid))
+    end
+
+    def checked_add(left : UInt64, right : UInt64) : UInt64?
+      return nil if right > UInt64::MAX - left
+
+      left + right
+    end
+
+    def checked_sum_outputs(outputs : Array(TxOutput)) : UInt64?
+      total = 0_u64
+      outputs.each do |output|
+        next_total = checked_add(total, output.amount)
+        return nil unless next_total
+        total = next_total
+      end
+      total
     end
 
     def apply_block(block : Block, utxo_set : UtxoSet) : UndoEntry

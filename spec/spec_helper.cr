@@ -34,10 +34,29 @@ module Harpy::SpecHelpers
     difficulty : Int32 = 0,
     miner_pubkey : String = Harpy::Economics.genesis_pubkey,
   ) : Harpy::Chain
-    chain = Harpy::Chain.new([mined_genesis(difficulty, miner_pubkey)])
+    base_time = Time.utc - (block_count + 1).minutes
+    genesis = Harpy::Miner.mine(
+      Harpy::Block.genesis(
+        miner_pubkey: miner_pubkey,
+        timestamp: base_time.to_s(Harpy::Difficulty::TIMESTAMP_FORMAT),
+        difficulty: difficulty,
+      ),
+    )
+    chain = Harpy::Chain.new([genesis])
 
-    (1...block_count).each do |_index|
-      block = Harpy::Miner.mine_from_mempool(chain, miner_pubkey, verbose: false)
+    (1...block_count).each do |index|
+      coinbase = Harpy::CoinbaseTx.new(
+        outputs: [Harpy::TxOutput.new(Harpy::Economics::BLOCK_REWARD, miner_pubkey)],
+        height: index.to_u32,
+      )
+      candidate = Harpy::Block.new(
+        index,
+        (base_time + index.minutes).to_s(Harpy::Difficulty::TIMESTAMP_FORMAT),
+        [coinbase] of Harpy::BlockTx,
+        chain.tip.hash,
+        chain.next_difficulty,
+      )
+      block = Harpy::Miner.mine(candidate, verbose: false)
       chain.append!(block).should be_true
     end
 

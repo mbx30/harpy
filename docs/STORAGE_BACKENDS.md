@@ -24,7 +24,8 @@ which backend is in use.
 
 `Harpy::Storage::FileBackend` ([file_backend.cr](../src/harpy/storage/file_backend.cr))
 is the only backend today. It stores the chain as a single JSON file wrapping a
-**checksum envelope** (`Storage::Envelope`: `{checksum, blocks}`), where
+**versioned checksum envelope** (`Storage::Envelope`:
+`{format_version, checksum, blocks}`), where `format_version` is `3` and
 `checksum` is `SHA-256(blocks.to_json)`.
 
 - **Atomic writes (MIC-39):** writes go to a sibling `<path>.tmp` in the same
@@ -34,8 +35,8 @@ is the only backend today. It stores the chain as a single JSON file wrapping a
   `Harpy::StorageError` on mismatch *before* constructing a `Chain`, catching
   bit-rot / truncation / manual edits. This is distinct from the semantic
   `Chain#valid?` check that runs afterward in `load_or_genesis`.
-- **Legacy fallback:** a bare JSON array (pre-envelope format) still loads, with
-  a `chain_load_legacy` warning.
+- **Consensus reset:** v2 envelopes and legacy bare arrays are rejected with an
+  explicit `harpy-block-v3` reset message. There is no compatibility migration.
 
 ## Embedded KV spike (MIC-49) — findings & recommendation
 

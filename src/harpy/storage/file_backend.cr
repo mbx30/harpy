@@ -25,10 +25,15 @@ module Harpy
         atomic_write(Envelope.wrap(chain.blocks).to_json)
       end
 
-      # Parse the checksum envelope, falling back to the legacy bare-array format
-      # for chain files written before the envelope existed.
+      # v3 is an intentional consensus reset. Older envelopes and legacy bare
+      # arrays must be reset instead of being interpreted under new rules.
       private def read_blocks(raw : String) : Array(Block)
         envelope = Envelope.from_json(raw)
+
+        unless envelope.format_valid?
+          Log.error { "chain_load_failed path=#{@path} reason=incompatible_format" }
+          raise StorageError.new("stored chain format is incompatible with harpy-block-v3; reset chain data")
+        end
 
         unless envelope.checksum_valid?
           Log.error { "chain_load_failed path=#{@path} reason=checksum_mismatch" }
@@ -38,17 +43,9 @@ module Harpy
         envelope.blocks
       rescue ex : StorageError
         raise ex
-      rescue JSON::ParseException
-        read_legacy_blocks(raw)
-      end
-
-      private def read_legacy_blocks(raw : String) : Array(Block)
-        blocks = Array(Block).from_json(raw)
-        Log.warn { "chain_load_legacy path=#{@path} reason=no_checksum_envelope" }
-        blocks
-      rescue JSON::ParseException
-        Log.error { "chain_load_failed path=#{@path} reason=unparseable" }
-        raise StorageError.new("stored chain file is not valid JSON")
+      rescue ex
+        Log.error { "chain_load_failed path=#{@path} reason=incompatible_or_unparseable error=#{ex.message}" }
+        raise StorageError.new("stored chain format is incompatible with harpy-block-v3; reset chain data")
       end
 
       # Write to a sibling temp file in the same directory, then rename over the

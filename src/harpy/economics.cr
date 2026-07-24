@@ -14,6 +14,9 @@ module Harpy
     MIN_DIFFICULTY        =  0_i32
     MAX_DIFFICULTY        =  8_i32
 
+    MEDIAN_TIME_WINDOW   =   11_i32
+    MAX_FUTURE_DRIFT_SEC = 7200_i32
+
     def self.genesis_pubkey : String
       ENV["HARPY_GENESIS_PUBKEY"]? || DEFAULT_GENESIS_PUBKEY
     end
